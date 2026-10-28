@@ -3,107 +3,262 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>班级小喇叭 · 下载与入口</title>
-<style>
-  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
-  html,body{margin:0}
-  body{
-    font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;
-    background:radial-gradient(1000px 680px at 50% 0%,#12402F 0%,#0A1712 58%,#070D0B 100%);
-    color:#EAF3EF;min-height:100vh;padding:34px 20px 46px;
-  }
-  .wrap{width:min(720px,100%);margin:0 auto}
-  .head{text-align:center;margin-bottom:26px}
-  .logo{
-    width:70px;height:70px;border-radius:21px;margin:0 auto 14px;
-    background:linear-gradient(135deg,#00D68A,#00A76A);
-    display:flex;align-items:center;justify-content:center;
-    font-size:32px;font-weight:800;color:#fff;
-    box-shadow:0 16px 40px rgba(0,199,126,.34),inset 0 1px 0 rgba(255,255,255,.35);
-  }
-  h1{font-size:24px;margin:0 0 7px;letter-spacing:-.4px}
-  .sub{color:#8FA9A0;font-size:13px;line-height:1.7;margin:0}
-  .cards{display:grid;gap:12px}
-  .card{
-    background:rgba(255,255,255,.055);border:1px solid rgba(255,255,255,.09);
-    border-radius:17px;padding:17px 18px;
-  }
-  .card h2{margin:0 0 5px;font-size:15.5px;display:flex;align-items:center;gap:8px}
-  .tag{font-size:10.5px;font-weight:700;padding:2.5px 7px;border-radius:6px;letter-spacing:.3px}
-  .tag.web{background:rgba(0,214,138,.16);color:#4BE39B}
-  .tag.app{background:rgba(96,165,250,.16);color:#8CC2FF}
-  .card p{margin:0 0 13px;color:#97AEA4;font-size:12.8px;line-height:1.75}
-  .btn{
-    display:inline-flex;align-items:center;gap:6px;padding:11px 17px;border-radius:11px;
-    background:linear-gradient(135deg,#00D68A,#00A76A);color:#04120C;
-    font-size:13.5px;font-weight:800;text-decoration:none;
-  }
-  .btn.ghost{background:rgba(255,255,255,.08);color:#CFDED8;border:1px solid rgba(255,255,255,.12)}
-  .btn:active{transform:translateY(1px)}
-  .steps{margin-top:22px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);border-radius:15px;padding:16px 18px}
-  .steps h3{margin:0 0 11px;font-size:13px;color:#B9CCC4;letter-spacing:.4px}
-  .steps ol{margin:0;padding-left:19px;color:#8FA9A0;font-size:12.7px;line-height:2}
-  .steps b{color:#D6E6DF;font-weight:700}
-  .foot{margin-top:22px;text-align:center;font-size:11.5px;color:#5D7269;line-height:1.9}
-  .foot a{color:#7E988D}
-</style>
+<title>班级小喇叭 · 老师端</title>
+<link rel="stylesheet" href="css/common.css">
 </head>
 <body>
-<div class="wrap">
-  <div class="head">
-    <div class="logo">喇</div>
-    <h1>班级小喇叭</h1>
-    <p class="sub">老师在手机上发一条通知，教室电视立刻弹大字并朗读出来。<br>教师端用网页，大屏端和学生端用电脑软件。</p>
+<div class="app">
+  <!-- 顶部导航 -->
+  <div class="navbar light">
+    <div class="logo" id="nav-logo"></div>
+    <div class="title">班级小喇叭</div>
+    <button class="nav-btn" id="btn-open-screen">教室大屏</button>
+    <div class="avatar g" id="nav-avatar" title="账号">师</div>
   </div>
 
-  <div class="cards">
-    <div class="card">
-      <h2>教师端 <span class="tag web">网页</span></h2>
-      <p>手机或电脑浏览器直接打开，微信扫码登录。发文字、说话、传图、定时通知、点名倒计时都在这里。</p>
-      <a class="btn" id="teacher" href="#">打开教师端网页</a>
+  <!-- ===== Tab 1：发通知 ===== -->
+  <section class="tab active" id="tab-broadcast">
+    <div class="wrap">
+      <h1 class="h1">发通知</h1>
+
+      <!-- 发给 -->
+      <div class="card">
+        <div class="card-label">发给 <button class="act" id="btn-select-all">全选</button></div>
+        <div class="pills" id="class-pills"></div>
+      </div>
+
+      <!-- 发送方式：打字 / 说话 / 对讲 -->
+      <div class="card">
+        <div class="seg mode-seg" id="mode-seg">
+          <button data-mode="text" class="active"><span class="ic-slot" data-icon="type"></span>打字</button>
+          <button data-mode="voice"><span class="ic-slot" data-icon="mic"></span>说话</button>
+          <button data-mode="walkie"><span class="ic-slot" data-icon="wave"></span>对讲</button>
+        </div>
+
+        <!-- 打字 -->
+        <div class="pane active" id="pane-text">
+          <textarea id="notice-text" rows="3" maxlength="300" class="mt12" placeholder="输入要发到教室大屏的内容，大屏会弹出大字并朗读…"></textarea>
+          <div class="row mt8">
+            <span class="muted" id="char-count">0/300</span>
+            <span class="grow"></span>
+            <button class="chip-btn" data-tpl="上课了：请回到座位，保持安静，准备上课。">上课</button>
+            <button class="chip-btn" data-tpl="下课了：请喝水、上洗手间，走廊不要跑动。">下课</button>
+            <button class="chip-btn" data-tpl="放学了：请关窗、关灯、关电脑，值日生留下打扫。">放学</button>
+          </div>
+          <div class="row mt8">
+            <button class="btn ghost grow sm" id="btn-image"><span class="ic-slot" data-icon="image"></span>传图片</button>
+            <button class="btn ghost grow sm" id="btn-clear">清空</button>
+          </div>
+          <input type="file" id="file-input" accept="image/*" hidden>
+        </div>
+
+        <!-- 说话（录一段语音发到大屏） -->
+        <div class="pane" id="pane-voice">
+          <div class="voice-stage">
+            <button class="voice-mic" id="voice-rec-btn"><span class="ic-slot" data-icon="mic"></span></button>
+            <div class="rec-timer" id="voice-rec-timer" hidden style="font-size:20px"><span class="live-dot"></span><span id="voice-rec-sec">0:00</span></div>
+            <div class="tip" id="voice-tip">点一下开始录音，再点一下结束并发送</div>
+            <div class="voice-done" id="voice-done" hidden>
+              <span class="dur" id="voice-dur">0:00</span>
+              <span class="muted small grow">语音留言已就绪</span>
+              <button class="chip-btn" id="voice-replay">试听</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 对讲（按住说话，教室立即播放） -->
+        <div class="pane" id="pane-walkie">
+          <div class="walkie-stage">
+            <p class="hint">按住下方按钮说话，松开后教室大屏<b>立即播放</b>，说完全班都能听见。<br>（大屏需保持打开并已启用声音）</p>
+            <div class="walkie-circle" id="walkie-btn"><span class="ic-slot" data-icon="mic"></span><span class="lbl" id="walkie-lbl">按住说话</span></div>
+            <div class="rec-timer" id="walkie-timer" hidden><span class="live-dot"></span><span id="walkie-sec">0:00</span></div>
+            <div class="walkie-live" id="walkie-live" hidden><span class="dot"></span>正在对讲 · 最多 1 分钟</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 展示设置 -->
+      <div class="card">
+        <div class="card-label">展示设置 <span class="act" id="display-summary">全屏 · 读2遍 · 15秒</span></div>
+        <div class="set-row">
+          <span class="set-k">展示方式</span>
+          <div class="pick-group" id="pick-display">
+            <button class="pick active" data-v="full">全屏</button>
+            <button class="pick" data-v="popup">弹窗</button>
+          </div>
+        </div>
+        <div class="set-row">
+          <span class="set-k">播放次数</span>
+          <div class="pick-group" id="pick-times">
+            <button class="pick" data-v="1">1 遍</button>
+            <button class="pick active" data-v="2">2 遍</button>
+            <button class="pick" data-v="3">3 遍</button>
+            <button class="pick" data-v="5">5 遍</button>
+          </div>
+        </div>
+        <div class="set-row">
+          <span class="set-k">停留时长</span>
+          <div class="pick-group" id="pick-stay">
+            <button class="pick" data-v="15">15 秒</button>
+            <button class="pick active" data-v="30">30 秒</button>
+            <button class="pick" data-v="60">1 分钟</button>
+            <button class="pick" data-v="0">常驻</button>
+          </div>
+        </div>
+        <div class="set-row">
+          <span class="set-k">文字大小</span>
+          <div class="pick-group" id="pick-size">
+            <button class="pick" data-v="sm">小</button>
+            <button class="pick active" data-v="md">中</button>
+            <button class="pick" data-v="lg">大</button>
+            <button class="pick" data-v="xl">特大</button>
+          </div>
+        </div>
+        <div class="divider"></div>
+        <div class="set-row">
+          <span class="set-k grow">语音播报（朗读）</span>
+          <label class="switch"><input type="checkbox" id="sw-tts" checked><span class="track"></span></label>
+        </div>
+        <div class="set-row">
+          <span class="set-k grow">停留结束后自动收起</span>
+          <label class="switch"><input type="checkbox" id="sw-autoclose" checked><span class="track"></span></label>
+        </div>
+      </div>
+
+      <!-- 发送时间 -->
+      <div class="card">
+        <div class="card-label">发送时间</div>
+        <div class="seg" id="time-seg">
+          <button data-v="now" class="active">现在</button>
+          <button data-v="scheduled">定时</button>
+        </div>
+
+        <div id="sched-box" hidden>
+          <div class="seg mt12" id="repeat-seg">
+            <button data-v="once">只发一次</button>
+            <button data-v="weekdays" class="active">周一至五</button>
+            <button data-v="daily">每天</button>
+            <button data-v="custom">自选</button>
+          </div>
+          <div class="pills mt8" id="days-pills" hidden></div>
+          <div class="wheel-wrap mt12">
+            <div class="wheel" id="wheel-hour"></div>
+            <span class="wheel-colon">:</span>
+            <div class="wheel" id="wheel-min"></div>
+          </div>
+          <div class="wheel-note" id="wheel-note">上下滑动选择时间</div>
+        </div>
+
+        <div class="preview-frame mt12">
+          <span class="pv-tag">🔔 通知</span>
+          <div class="pv-text" id="pv-text">大屏会在这里显示你要发的内容</div>
+          <div class="pv-foot" id="pv-foot">—</div>
+        </div>
+      </div>
+
+      <!-- 最近通知 -->
+      <div class="card">
+        <div class="card-label">最近通知 <span class="act" id="feed-count"></span></div>
+        <div id="msg-feed"></div>
+      </div>
     </div>
 
-    <div class="card">
-      <h2>教室大屏 <span class="tag app">桌面软件</span></h2>
-      <p>装在教室那台连着电视的电脑上。收到通知就全屏弹字 + 朗读，还能常驻执行定时广播（眼保健操、放学提醒）。</p>
-      <a class="btn" href="https://github.com/moophy/class-speaker/archive/refs/heads/main.zip">下载桌面版</a>
-      <a class="btn ghost" href="https://github.com/moophy/class-speaker" style="margin-left:8px">查看源码</a>
+    <div class="cta-bar">
+      <button class="btn block lg" id="btn-send">立即发到班级</button>
     </div>
+  </section>
 
-    <div class="card">
-      <h2>学生端 <span class="tag app">桌面软件</span></h2>
-      <p>装在教室电脑上，学生按住说话，老师在手机上就能听到回放。</p>
-      <a class="btn" href="https://github.com/moophy/class-speaker/archive/refs/heads/main.zip">下载桌面版</a>
+  <!-- ===== Tab 2：课堂 ===== -->
+  <section class="tab" id="tab-class">
+    <div class="wrap">
+      <h1 class="h1">课堂</h1>
+      <button class="entry-card" id="go-rollcall">
+        <span class="ic-box"><span class="ic-slot" data-icon="users"></span></span>
+        <span class="grow"><span class="t1">点名</span><span class="t2">随机或顺序点名，结果同步到教室大屏</span></span>
+        <span class="arrow">›</span>
+      </button>
+      <button class="entry-card" id="go-timer">
+        <span class="ic-box o"><span class="ic-slot" data-icon="clock"></span></span>
+        <span class="grow"><span class="t1">倒计时</span><span class="t2">做题、自习、考试计时，大屏同步显示</span></span>
+        <span class="arrow">›</span>
+      </button>
+
+      <div class="card">
+        <div class="card-label">一键倒计时</div>
+        <div class="quick-grid" id="quick-timers">
+          <button class="quick-tile" data-timer="1" data-label="课间休息">1 分钟<span class="sub">课间休息</span></button>
+          <button class="quick-tile" data-timer="3" data-label="课堂练习">3 分钟<span class="sub">课堂练习</span></button>
+          <button class="quick-tile" data-timer="5" data-label="眼保健操">5 分钟<span class="sub">眼保健操</span></button>
+          <button class="quick-tile" data-timer="10" data-label="自习">10 分钟<span class="sub">自习 / 阅读</span></button>
+        </div>
+        <p class="iframe-note mt12" style="margin-bottom:0">点一下，教室大屏立刻变成倒计时；到点会响铃并朗读「时间到」。</p>
+      </div>
+
+      <div class="card">
+        <div class="card-label">课堂广播</div>
+        <div class="quick-grid">
+          <button class="quick-tile" data-quick="眼保健操时间到，请闭上眼睛，保持安静，开始做眼保健操。">眼保健操<span class="sub">立即广播</span></button>
+          <button class="quick-tile" data-quick="现在开始听写，请拿出听写本，安静准备。">开始听写<span class="sub">立即广播</span></button>
+          <button class="quick-tile" data-quick="请各组组长收作业，交到讲台。">收作业<span class="sub">立即广播</span></button>
+          <button class="quick-tile" data-quick="请安静，老师在讲重点，请看向黑板。">安静提醒<span class="sub">立即广播</span></button>
+        </div>
+      </div>
     </div>
+  </section>
+
+  <!-- ===== Tab 3：班级 ===== -->
+  <section class="tab" id="tab-cls">
+    <div class="wrap" id="cls-wrap"></div>
+  </section>
+
+  <!-- ===== Tab 4：记录 ===== -->
+  <section class="tab" id="tab-log">
+    <div class="wrap">
+      <h1 class="h1">记录</h1>
+      <div class="filter-row" id="log-filter">
+        <button class="pill soft active" data-f="all">全部</button>
+        <button class="pill soft" data-f="text">文字</button>
+        <button class="pill soft" data-f="image">图片</button>
+        <button class="pill soft" data-f="voice">语音</button>
+        <button class="pill soft" data-f="live">对讲</button>
+      </div>
+      <div id="log-feed"></div>
+      <div class="card mt12">
+        <div class="card-label">定时任务 <button class="act" id="btn-add-sched">＋ 新建</button></div>
+        <div id="schedule-list"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== Tab 5：我的 ===== -->
+  <section class="tab" id="tab-more">
+    <div class="wrap" id="more-wrap"></div>
+  </section>
+
+  <!-- 底部 Tab 栏 -->
+  <div class="tabbar" id="tabbar">
+    <button data-tab="tab-broadcast" class="active"><span class="ic-slot" data-icon="send"></span>发通知</button>
+    <button data-tab="tab-class"><span class="ic-slot" data-icon="users"></span>课堂</button>
+    <button data-tab="tab-cls"><span class="ic-slot" data-icon="smartphone"></span>班级</button>
+    <button data-tab="tab-log"><span class="ic-slot" data-icon="clock"></span>记录</button>
+    <button data-tab="tab-more"><span class="ic-slot" data-icon="user"></span>我的</button>
   </div>
-
-  <div class="steps">
-    <h3>桌面端怎么用</h3>
-    <ol>
-      <li>点「下载桌面版」，得到 <b>class-speaker-main.zip</b>，解压到任意文件夹（建议 D 盘）。</li>
-      <li>进入解压出来的 <b>desktop</b> 文件夹。<br>大屏双击 <b>start-screen.vbs</b>，学生端双击 <b>start-student.vbs</b>（没反应就改用同名的 .bat）。</li>
-      <li>第一次打开会让你输入 <b>6 位绑定码</b>；绑定码在教师端「班级」页顶部。之后每次打开自动记住。</li>
-    </ol>
-  </div>
-
-  <p class="foot">
-    大屏端 / 学生端是本地软件，双击后会以一个独立窗口运行，不带地址栏，和普通软件一样。<br>
-    需要电脑上装有 Microsoft Edge（Win10 / Win11 自带）或 Chrome。
-  </p>
 </div>
 
-<script>
-(function () {
-  var BASE = 'https://class-speaker-00500.app.workbuddy.host/';
-  var SHARE = 'JPUDPHCCPM';
-  var q = 'sharecode=' + SHARE;
-  try {
-    var p = new URLSearchParams(location.search);
-    var code = (p.get('code') || '').trim();
-    if (/^\d{6}$/.test(code)) q += '&code=' + code;
-  } catch (e) {}
-  document.getElementById('teacher').href = BASE + '?' + q;
-})();
-</script>
+<!-- 通用弹窗 -->
+<div class="overlay center" id="sheet-modal">
+  <div class="sheet" style="width:100%">
+    <div class="sheet-head"><div class="t" id="modal-title"></div><button class="close" data-close="sheet-modal">✕</button></div>
+    <div id="modal-body"></div>
+  </div>
+</div>
+
+<script src="js/config.js"></script>
+<!-- 请求桥必须在云 SDK 之前加载，确保 SDK 内部的 fetch 被接管 -->
+<script src="js/bridge.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tencent-ai/workbuddy-cloud-sdk@dev/lib/index.global.js"></script>
+<script src="js/common.js"></script>
+<script src="js/cloud.js"></script>
+<script src="js/teacher.js"></script>
 </body>
 </html>
