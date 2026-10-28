@@ -57,8 +57,10 @@ async function bootScreen() {
 function start() {
   restoreClass().then(() => {
     Checker.start();
-    presencePing(); setInterval(presencePing, 20000);
+    presencePing(); setInterval(presencePing, 8000);
     document.addEventListener('visibilitychange', () => { if (!document.hidden) presencePing(); });
+    window.addEventListener('pagehide', presenceOffline);
+    window.addEventListener('beforeunload', presenceOffline);
     startClock(d => {
       $('#s-clock').textContent = pad2(d.getHours()) + ':' + pad2(d.getMinutes());
       $('#idle-time').textContent = pad2(d.getHours()) + ':' + pad2(d.getMinutes());
@@ -71,10 +73,16 @@ function start() {
   });
 }
 
-/* 在线心跳：老师端据此在班级胶囊上显示「在线 / 离线」 */
+/* 在线心跳：老师端据此在班级胶囊上显示「在线 / 离线」。
+   心跳 8 秒一次；关窗口时用 keepalive 直接写离线（写不出去就等 24 秒超时）。 */
 function presencePing() {
   if (!S.classId) return;
-  C.setPresence(S.classId, { screen: Date.now() }).catch(() => {});
+  C.setPresence(S.classId, { screen: Date.now() }).then(id => { if (id) S.prow = id; }).catch(() => {});
+}
+
+function presenceOffline() {
+  if (!S.classId) return;
+  C.offlinePresence(S.classId, S.prow);
 }
 
 async function restoreClass() {

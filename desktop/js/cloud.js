@@ -302,6 +302,25 @@ const C = {
     const data = Object.assign({}, (ex && ex.data) || {}, patch);
     return this._setOne('presence', classId, data);
   },
+  /* 关窗口/断电前的最后一次机会：普通请求会被浏览器取消，只有 keepalive 能发出去。
+     写成 screen:0，老师端立刻判离线；发不出去也没关系，还有心跳超时兜底。 */
+  offlinePresence(classId, rowId) {
+    try {
+      const conf = window.PUBLIC_CONFIG || {};
+      const ep = String(conf.endpoint || '').replace(/\/+$/, '');
+      const key = String(conf.publishableKey || '');
+      if (!ep || !key || !classId) return;
+      const q = rowId
+        ? 'id=eq.' + encodeURIComponent(rowId)
+        : 'kind=eq.presence&class_id=eq.' + encodeURIComponent(classId);
+      fetch(ep + '/.cloud/database/rest/cs_events?' + q, {
+        method: 'PATCH',
+        keepalive: true,
+        headers: { 'Content-Type': 'application/json', 'x-wb-webapp-access-key': key, 'Prefer': 'return=minimal' },
+        body: JSON.stringify({ data: { screen: 0 } })
+      }).catch(() => {});
+    } catch (e) {}
+  },
   async listPresence() { const r = await DB.from('cs_events').select('*').eq('kind', 'presence'); return unwrap(r) || []; },
 
   /* 抽人回答：status = running | done */

@@ -160,7 +160,7 @@ function renderNav() {
 }
 
 /* ---------- 发给：班级多选 ---------- */
-const ONLINE_MS = 90 * 1000;                 // 大屏 20 秒一次心跳，90 秒内算在线
+const ONLINE_MS = 24 * 1000;                 // 大屏 8 秒一次心跳；24 秒没心跳就判离线（关屏/断电约 24 秒内变离线）
 function presenceOf(id) { return (T.cache.presence || []).find(p => String(p.class_id) === String(id)); }
 function isOnline(id) {
   const p = presenceOf(id);
