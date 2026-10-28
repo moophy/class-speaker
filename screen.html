@@ -93,12 +93,11 @@
   </div>
 </div>
 
-<script src="js/config.js"></script>
-<!-- 请求桥必须在云 SDK 之前加载 -->
-<script src="js/bridge.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@tencent-ai/workbuddy-cloud-sdk@dev/lib/index.global.js"></script>
+<script src="js/config.js"></script>
 <script src="js/common.js"></script>
 <script src="js/cloud.js"></script>
 <script src="js/screen.js"></script>
+<script>/*桌面版专用*/if(location.protocol!=='file:'){document.addEventListener('DOMContentLoaded',function(){var d=document.createElement('div');d.style.cssText='position:fixed;inset:0;z-index:99999;background:#0A1712;color:#EAF3EF;font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;display:flex;align-items:center;justify-content:center;padding:24px;text-align:center';d.innerHTML='<div style="max-width:430px"><div style="font-size:20px;font-weight:800;margin-bottom:10px">这是桌面版页面</div><p style="font-size:13.5px;line-height:1.85;color:#9FB5AB;margin:0 0 18px">教室大屏 / 学生端需要在电脑上作为软件运行。<br>请到下载页下载压缩包，解压后双击<br><b>start-screen.vbs</b> 或 <b>start-student.vbs</b>。</p><a href="../index.html" style="display:inline-block;padding:13px 22px;border-radius:12px;background:linear-gradient(135deg,#00D68A,#00A76A);color:#04120C;font-weight:800;text-decoration:none">去下载页</a></div>';document.body.appendChild(d);});}</script>
 </body>
 </html>
