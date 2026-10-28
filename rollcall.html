@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>班级小喇叭 · 点名与倒计时</title>
+<link rel="stylesheet" href="css/common.css">
+</head>
+<body>
+<div class="app">
+  <div class="navbar light">
+    <button class="nav-btn" id="btn-back">返回</button>
+    <div class="title">点名 · 倒计时</div>
+    <span class="tag-chip" id="rc-class"></span>
+  </div>
+
+  <div class="wrap">
+    <!-- 倒计时 -->
+    <div class="card">
+      <div class="card-label">课堂倒计时（同步显示到教室大屏）</div>
+      <div class="pills mb12" id="cd-presets"></div>
+      <div class="row mb12">
+        <input type="text" id="cd-custom" inputmode="numeric" placeholder="自定义分钟" style="flex:1">
+        <input type="text" id="cd-label" placeholder="标签，如：做题" style="flex:1.4">
+      </div>
+      <div class="center mb12">
+        <div class="countdown-chip" id="cd-display" style="font-size:34px;padding:14px 34px">--:--</div>
+        <div class="muted small mt8" id="cd-state">未开始</div>
+      </div>
+      <div class="row" id="cd-controls"></div>
+    </div>
+
+    <!-- 点名 -->
+    <div class="card">
+      <div class="card-label">随机点名 / 顺序点名 <span class="more muted" id="roster-count">0 人</span></div>
+      <div id="roll-setup">
+        <div class="row mb12">
+          <div class="seg" id="roll-mode-seg" style="flex:1">
+            <button data-v="random" class="active">随机点名</button>
+            <button data-v="seq">顺序点名</button>
+          </div>
+          <select id="roll-persec" style="flex:1">
+            <option value="0">不限时</option>
+            <option value="10" selected>每人10秒</option>
+            <option value="20">每人20秒</option>
+            <option value="30">每人30秒</option>
+          </select>
+        </div>
+        <div class="row">
+          <button class="btn ghost grow" id="btn-roster">管理花名册</button>
+          <button class="btn grow" id="btn-roll-start" style="flex:1.6">开始点名</button>
+        </div>
+      </div>
+      <div id="roll-active" hidden>
+        <div class="center">
+          <div id="roll-cur-name" style="font-size:44px;font-weight:800;line-height:1.3;margin:10px 0">--</div>
+          <div class="muted" id="roll-progress">-- / --</div>
+          <div class="rec-timer" id="roll-per-timer" hidden style="color:var(--green)"><span id="roll-per-sec"></span></div>
+        </div>
+        <div class="row mt12">
+          <button class="btn ghost-danger grow" id="btn-mark-absent">缺勤</button>
+          <button class="btn ghost grow" id="btn-mark-skip">跳过</button>
+          <button class="btn grow" id="btn-mark-present" style="flex:1.6">到</button>
+        </div>
+        <button class="btn gray block mt12" id="btn-roll-end">结束点名并保存</button>
+        <div id="roll-results" class="mt12"></div>
+      </div>
+    </div>
+
+    <!-- 历史 -->
+    <div class="card">
+      <div class="card-label">点名记录</div>
+      <div id="roll-history"></div>
+    </div>
+  </div>
+
+  <!-- 花名册弹层 -->
+  <div class="overlay center" id="sheet-modal">
+    <div class="sheet" style="width:100%">
+      <div class="sheet-head"><div class="t" id="modal-title"></div><button class="close" data-close="sheet-modal">✕</button></div>
+      <div id="modal-body"></div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@tencent-ai/workbuddy-cloud-sdk@dev/lib/index.global.js"></script>
+<script src="js/config.js"></script>
+<script src="js/common.js"></script>
+<script src="js/cloud.js"></script>
+<script src="js/rollcall.js"></script>
+</body>
+</html>
