@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head><meta charset="UTF-8"><title>cloud bridge</title></head>
+<body>
+<script>
+/* 运行在 sandbox="allow-scripts" 的 iframe 里：window.origin 为 null，
+   由它代父页面发起云端请求，从而绕过网关的来源域名限制。 */
+(function () {
+  function reply(msg) { try { parent.postMessage(msg, '*'); } catch (e) {} }
+
+  window.addEventListener('message', function (e) {
+    var m = e.data || {};
+    if (!m || m.__cw !== 1) return;
+    var out = { __cw: 1, id: m.id, status: 0, statusText: '', body: '', headers: [], err: '' };
+    var init = {
+      method: m.method || 'GET',
+      headers: m.headers || {},
+      mode: 'cors',
+      credentials: 'omit',
+      cache: 'no-store',
+      redirect: 'follow'
+    };
+    if (m.body != null && init.method !== 'GET' && init.method !== 'HEAD') init.body = m.body;
+
+    fetch(m.url, init).then(function (r) {
+      out.status = r.status;
+      out.statusText = r.statusText || '';
+      var hs = [];
+      r.headers.forEach(function (v, k) { hs.push([k, v]); });
+      out.headers = hs;
+      if (r.status === 204 || r.status === 205 || r.status === 304) { out.body = ''; return ''; }
+      return r.text();
+    }).then(function (t) {
+      if (t !== undefined) out.body = t;
+      reply(out);
+    }).catch(function (err) {
+      out.err = String((err && err.message) || err);
+      reply(out);
+    });
+  });
+
+  reply({ __cw: 1, ready: true, origin: String(window.origin) });
+})();
+</script>
+</body>
+</html>
