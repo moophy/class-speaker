@@ -155,6 +155,9 @@ function bigFontSize(text) {
 }
 function startClock(fn) { const run = () => fn(new Date()); run(); setInterval(run, 1000); }
 
+/* 示例名单：花名册留空时一键填入，方便先试试点名 / 收到 */
+const SAMPLE_NAMES = ['张小明', '李小红', '王小雨', '刘壮壮', '陈思远', '赵一诺', '周子航', '吴佳怡', '郑浩然', '孙悦'];
+
 /* ---------- 班级绑定（大屏 / 学生端 / 点名端：不需要登录，输入绑定码即可） ---------- */
 const ClassBind = {
   KEY: 'cs_class_id',

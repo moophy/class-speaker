@@ -6,6 +6,7 @@
 <title>班级小喇叭 · 教室大屏</title>
 <link rel="stylesheet" href="css/common.css">
 <style>
+  html, body { height: 100%; overflow: hidden; }
   .feed-panel {
     position: fixed; top: 0; right: 0; bottom: 0; width: 380px; max-width: 86vw; z-index: 60;
     background: rgba(16, 22, 20, .96); border-left: 1px solid rgba(255,255,255,.1);
@@ -30,6 +31,7 @@
     <span class="tag-chip" id="s-code" hidden></span>
     <span class="spacer"></span>
     <span class="clock" id="s-clock">--:--</span>
+    <button class="screen-btn" id="s-draw">抽人</button>
     <button class="screen-btn" id="s-full">全屏</button>
     <button class="screen-btn" id="s-feed-btn">通知列表</button>
   </div>
@@ -61,28 +63,36 @@
     <div class="notice-card">
       <div class="notice-head">
         <span class="tag-chip" id="n-tag">通知</span>
-        <span class="who" id="n-who"></span>
+        <div class="n-meta">
+          <span class="who" id="n-who"></span>
+          <span class="n-time" id="n-time"></span>
+        </div>
       </div>
       <div class="notice-body" id="n-body"></div>
       <div class="notice-foot">
         <button class="btn ghost" id="n-close">关闭</button>
-        <button class="btn" id="n-receipt">我收到了</button>
+        <button class="btn rc-big" id="n-receipt">收到了</button>
       </div>
     </div>
+  </div>
+
+  <!-- 跑马灯（底部横向滚动） -->
+  <div class="marquee-layer" id="marquee-layer">
+    <div class="mq-head"><span class="mq-dot"></span><span id="mq-who">老师</span></div>
+    <div class="mq-window"><div class="marquee-track" id="marquee-track"></div></div>
+  </div>
+
+  <!-- 抽人层 -->
+  <div class="draw-layer" id="draw-layer">
+    <div class="draw-tip" id="draw-tip">名字滚动中 · 点一下屏幕停止</div>
+    <div class="draw-name" id="draw-name">--</div>
+    <div class="draw-sub" id="draw-sub"></div>
   </div>
 
   <!-- 通知列表侧栏 -->
   <div class="feed-panel" id="feed-panel">
     <h3>班级通知（可回放）</h3>
     <div id="feed-list"></div>
-  </div>
-
-  <!-- 收到·花名册弹层 -->
-  <div class="overlay center screen-modal" id="receipt-overlay">
-    <div class="sheet" style="width:100%">
-      <div class="sheet-head"><div class="t">点击你的名字，确认收到</div><button class="close" id="receipt-close">✕</button></div>
-      <div class="roster-grid" id="receipt-grid"></div>
-    </div>
   </div>
 
   <!-- 声音解锁 -->
@@ -93,11 +103,12 @@
   </div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/@tencent-ai/workbuddy-cloud-sdk@dev/lib/index.global.js"></script>
 <script src="js/config.js"></script>
+<!-- 请求桥必须在云 SDK 之前加载 -->
+<script src="js/bridge.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tencent-ai/workbuddy-cloud-sdk@dev/lib/index.global.js"></script>
 <script src="js/common.js"></script>
 <script src="js/cloud.js"></script>
 <script src="js/screen.js"></script>
-<script>/*桌面版专用*/if(location.protocol!=='file:'){document.addEventListener('DOMContentLoaded',function(){var d=document.createElement('div');d.style.cssText='position:fixed;inset:0;z-index:99999;background:#0A1712;color:#EAF3EF;font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;display:flex;align-items:center;justify-content:center;padding:24px;text-align:center';d.innerHTML='<div style="max-width:430px"><div style="font-size:20px;font-weight:800;margin-bottom:10px">这是桌面版页面</div><p style="font-size:13.5px;line-height:1.85;color:#9FB5AB;margin:0 0 18px">教室大屏 / 学生端需要在电脑上作为软件运行。<br>请到下载页下载压缩包，解压后双击<br><b>start-screen.vbs</b> 或 <b>start-student.vbs</b>。</p><a href="../index.html" style="display:inline-block;padding:13px 22px;border-radius:12px;background:linear-gradient(135deg,#00D68A,#00A76A);color:#04120C;font-weight:800;text-decoration:none">去下载页</a></div>';document.body.appendChild(d);});}</script>
 </body>
 </html>

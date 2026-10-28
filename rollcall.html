@@ -30,6 +30,23 @@
       <div class="row" id="cd-controls"></div>
     </div>
 
+    <!-- 抽人回答 -->
+    <div class="card" id="draw-card">
+      <div class="card-label">抽人回答问题 <span class="more muted" id="draw-state">未开始</span></div>
+      <p class="iframe-note" style="margin:0 0 10px">点「开始转动」，大屏上的名字会不停滚动；<b>在大屏上点一下屏幕就停</b>，抽到的同学会显示在大屏和这里。</p>
+      <div class="pills mb12" id="draw-count">
+        <button class="pill active" data-dn="1">1 人</button>
+        <button class="pill" data-dn="2">2 人</button>
+        <button class="pill" data-dn="3">3 人</button>
+        <button class="pill" data-dn="5">5 人</button>
+      </div>
+      <div class="row">
+        <button class="btn grow" id="btn-draw-start">开始转动</button>
+        <button class="btn ghost-danger grow" id="btn-draw-stop" hidden>停止</button>
+      </div>
+      <div class="center mt12" id="draw-result" style="font-size:22px;font-weight:800;color:var(--green-deep)"></div>
+    </div>
+
     <!-- 点名 -->
     <div class="card">
       <div class="card-label">随机点名 / 顺序点名 <span class="more muted" id="roster-count">0 人</span></div>

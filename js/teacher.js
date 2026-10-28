@@ -63,6 +63,31 @@ function start() {
   updateCharCount();
   refresh();
   setInterval(refresh, 2500);
+
+  // 输入结束（失焦）后再补一次重绘：输入期间的重绘被跳过，避免光标丢失/页面跳动
+  document.addEventListener('focusout', e => {
+    if (e.target && /^(INPUT|TEXTAREA)$/.test(e.target.tagName)) {
+      setTimeout(() => { if (!isTyping()) refresh(); }, 280);
+    }
+  });
+
+  // 24 小时自动清理已发送记录（定时任务不受影响）
+  setTimeout(() => autoPurge(), 6000);
+  setInterval(autoPurge, 10 * 60 * 1000);
+}
+
+/* 超过 24 小时的已发送记录自动删除；定时任务（schedule）不动。每 10 分钟最多跑一次 */
+const PURGE_KEY = 'cs_purge_at';
+async function autoPurge() {
+  const last = +(localStorage.getItem(PURGE_KEY) || 0);
+  if (Date.now() - last < 10 * 60 * 1000) return;
+  const ids = (T.cache.bound || []).map(c => c.id);
+  if (!ids.length) return;
+  localStorage.setItem(PURGE_KEY, String(Date.now()));
+  try {
+    const n = await C.purgeMessages(ids, 24);
+    if (n > 0) { refresh(); }
+  } catch (e) { /* 下次再试 */ }
 }
 
 function restoreState() {
@@ -80,8 +105,18 @@ function targetNames() { return T.targets.map(nameOf).filter(Boolean); }
 function setClass(id) { T.classId = id; saveState(Object.assign(loadState(), { currentClassId: id })); }
 
 /* ---------- 刷新 ---------- */
+/* 正在输入时不重绘：否则每 2.5 秒重绘会把输入框冲掉，光标丢失、页面乱跳 */
+function isTyping() {
+  const a = document.activeElement;
+  if (!a) return false;
+  if (!/^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)) return false;
+  if (a.type === 'checkbox' || a.type === 'radio') return false;
+  return a.offsetParent !== null;
+}
+
 async function refresh() {
   try {
+    try { T.cache.presence = await C.listPresence(); } catch (e) { T.cache.presence = []; }
     const bound = await C.boundClasses();
     T.cache.bound = bound;
     if (!bound.some(c => String(c.id) === String(T.classId))) {
@@ -109,7 +144,9 @@ async function refresh() {
 }
 
 function renderAll() {
-  renderNav(); renderPills(); renderCta(); renderPreview();
+  renderNav();
+  if (isTyping()) return;                      // 输入中：只更新头像，其它等失焦后再画
+  renderPills(); renderCta(); renderPreview();
   renderFeed(); renderLog();
   if ($('#tab-cls').classList.contains('active')) renderClassTab();
   if ($('#tab-more').classList.contains('active')) renderMore();
@@ -123,12 +160,24 @@ function renderNav() {
 }
 
 /* ---------- 发给：班级多选 ---------- */
+const ONLINE_MS = 90 * 1000;                 // 大屏 20 秒一次心跳，90 秒内算在线
+function presenceOf(id) { return (T.cache.presence || []).find(p => String(p.class_id) === String(id)); }
+function isOnline(id) {
+  const p = presenceOf(id);
+  const ts = p && p.data && +p.data.screen;
+  return !!ts && (Date.now() - ts) < ONLINE_MS;
+}
+
 function renderPills() {
   const box = $('#class-pills');
-  if (!T.cache.bound.length) { box.innerHTML = '<span class="muted">还没有班级</span>'; return; }
+  const legend = $('#pill-legend');
+  if (!T.cache.bound.length) { box.innerHTML = '<span class="muted">还没有班级</span>'; if (legend) legend.hidden = true; return; }
+  if (legend) legend.hidden = false;
   box.innerHTML = T.cache.bound.map(c => {
     const on = T.targets.some(id => String(id) === String(c.id));
-    return '<button class="pill soft' + (on ? ' active' : '') + '" data-target="' + c.id + '">' + esc(c.name) + '</button>';
+    const live = isOnline(c.id);
+    return '<button class="pill soft' + (on ? ' active' : '') + '" data-target="' + c.id + '" title="' + (live ? '教室大屏在线' : '教室大屏离线') + '">' +
+      '<span class="pd' + (live ? ' on' : '') + '"></span>' + esc(c.name) + '</button>';
   }).join('');
   const allOn = T.cache.bound.length > 0 && T.targets.length === T.cache.bound.length;
   $('#btn-select-all').textContent = allOn ? '取消全选' : '全选';
@@ -176,8 +225,11 @@ function renderPreview() {
   el.style.fontSize = { sm: 14, md: 17, lg: 20, xl: 24 }[T.fontSize] + 'px';
   const who = Auth.name() || '老师';
   $('#pv-foot').textContent = who + ' · ' + (T.timing === 'now' ? fmtHM(Date.now()) : hhmm());
+  const dl = { full: '全屏', popup: '弹窗', marquee: '跑马灯' }[T.display] || '全屏';
   $('#display-summary').textContent =
-    (T.display === 'popup' ? '弹窗' : '全屏') + ' · 读' + T.playTimes + '遍 · ' + (T.staySec ? T.staySec + '秒' : '常驻');
+    dl + ' · 读' + T.playTimes + '遍 · ' + (T.staySec ? T.staySec + '秒' : '常驻');
+  const frame = $('.preview-frame');
+  if (frame) frame.classList.toggle('pv-marquee', T.display === 'marquee');
 }
 
 /* ---------- 消息卡片 ---------- */
@@ -189,6 +241,7 @@ function typeChip(m) {
   return '';
 }
 function receiptsFor(msgId) { return T.cache.receipts.filter(r => String(r.data.msg_id) === String(msgId)); }
+function isCollective(rc) { return rc.some(r => r.data && (r.data.collective || String(r.data.student_id) === 'all')); }
 
 function msgCard(m) {
   const d = m.data;
@@ -203,9 +256,12 @@ function msgCard(m) {
   } else if (d.type === 'voice') {
     inner += '<button class="play-btn" data-play="' + esc(d.mediaPath) + '">' + ICON.play + '回放 ' + fmtDur(d.duration || 0) + '</button>';
   }
-  const foot = '<span class="receipt-btn" data-receipt="' + m.id + '">' + ICON.check + '已收到 ' + rc.length + (total ? '/' + total : '') + '</span>';
+  const coll = isCollective(rc);
+  const rcLabel = coll ? '班级已收到' : (rc.length ? '已收到 ' + rc.length + (total ? '/' + total : '') : '待确认收到');
+  const foot = '<span class="receipt-btn' + (coll ? ' done' : '') + '" data-receipt="' + m.id + '">' + ICON.check + rcLabel + '</span>';
   return '<div class="msg-card">' +
-    '<div class="msg-head">' + typeChip(m) + '<span class="muted small" style="margin-left:auto">' + fmtMDHM(time) + '</span></div>' +
+    '<div class="msg-head">' + typeChip(m) + '<span class="muted small" style="margin-left:auto">' + fmtMDHM(time) + '</span>' +
+    '<button class="msg-del" data-delmsg="' + m.id + '" title="删除这条记录">' + ICON.trash + '</button></div>' +
     inner +
     '<div class="msg-foot"><span class="who">' + esc(m.name || '') + (d.readTimes ? ' · 读' + d.readTimes + '遍' : '') + '</span>' + foot + '</div>' +
     '</div>';
@@ -498,11 +554,12 @@ function renderClassTab() {
     '<div class="card"><div class="card-label">当前班级 · ' + esc(c.name) + '</div>' +
     '<div class="code-big">' + esc(c.code) + '</div>' +
     '<button class="btn sm ghost block mt12" data-action="copy-code">' + ICON.copy + '复制绑定码</button>' +
-    '<p class="iframe-note mt12" style="margin-bottom:0">这个码有两个用处：① 其他老师扫码登录后输入它，即可<b>同时绑定本班</b>；② 教室大屏、学生收到页、点名页输入它就能<b>免登录</b>接收通知。</p></div>' +
+    '<p class="iframe-note mt12" style="margin-bottom:0">这个码有两个用处：① 其他老师输入它，即可<b>同时绑定本班</b>；② 教室大屏、点名页输入它就能<b>免登录</b>接收通知。</p></div>' +
 
     '<div class="card"><div class="card-label">我的班级（' + T.cache.bound.length + '）</div>' +
     T.cache.bound.map(b => '<div class="list-item"><div class="grow"><div style="font-weight:600">' + esc(b.name) +
       (String(b.id) === String(T.classId) ? ' <span class="tag-chip">当前</span>' : '') +
+      (isOnline(b.id) ? ' <span class="tag-chip">大屏在线</span>' : ' <span class="tag-chip gray">大屏离线</span>') +
       '</div><div class="muted small">绑定码 ' + esc(b.code) + '</div></div>' +
       (String(b.id) === String(T.classId) ? '' : '<button class="btn sm ghost" data-setclass="' + b.id + '">切换</button>') +
       '<button class="btn sm ghost-danger" data-unbind="' + b.id + '">解绑</button></div>').join('') +
@@ -511,16 +568,13 @@ function renderClassTab() {
 
     '<div class="card"><div class="card-label">花名册 <span class="act">' + students.length + ' 人</span></div>' +
     (students.length ? '<div class="pills mb12">' + students.map(s => '<span class="pill soft" style="cursor:default">' + esc(s.name) + '</span>').join('') + '</div>'
-      : '<div class="empty" style="padding:14px">还没有名单，点名和「已收到」统计需要花名册</div>') +
+      : '<div class="empty" style="padding:14px">还没有名单。点名、随机抽人要用花名册；「收到了」不用，班级在大屏上点一次就行</div>') +
     '<button class="btn ghost block sm" data-action="edit-roster">' + ICON.edit + '管理花名册</button></div>' +
 
     '<div class="card"><div class="card-label">屏幕</div>' +
     '<button class="entry-card" style="box-shadow:none;padding:12px 0;margin:0" data-action="open-screen">' +
     '<span class="ic-box b"><span class="ic-slot2">' + ICON.screen + '</span></span>' +
-    '<span class="grow"><span class="t1">打开教室大屏</span><span class="t2">在大屏电脑上打开，保持常亮</span></span><span class="arrow">›</span></button>' +
-    '<button class="entry-card" style="box-shadow:none;padding:12px 0;margin:0;border-top:1px solid var(--line)" data-action="open-student">' +
-    '<span class="ic-box"><span class="ic-slot2">' + ICON.users + '</span></span>' +
-    '<span class="grow"><span class="t1">学生收到页</span><span class="t2">学生用手机打开，点自己名字确认收到</span></span><span class="arrow">›</span></button></div>';
+    '<span class="grow"><span class="t1">打开教室大屏</span><span class="t2">在大屏电脑上打开，保持常亮</span></span><span class="arrow">›</span></button></div>';
 }
 
 /* ---------- 我的 Tab ---------- */
@@ -536,12 +590,9 @@ function renderMore() {
     '<button class="entry-card" data-action="open-screen">' +
     '<span class="ic-box b"><span class="ic-slot2">' + ICON.screen + '</span></span>' +
     '<span class="grow"><span class="t1">教室大屏</span><span class="t2">弹出大字 + 朗读，收到对讲立即播放</span></span><span class="arrow">›</span></button>' +
-    '<button class="entry-card" data-action="open-student">' +
-    '<span class="ic-box"><span class="ic-slot2">' + ICON.users + '</span></span>' +
-    '<span class="grow"><span class="t1">学生收到页</span><span class="t2">花名册点名字，确认收到</span></span><span class="arrow">›</span></button>' +
     '<button class="entry-card" data-action="open-rollcall">' +
     '<span class="ic-box o"><span class="ic-slot2">' + ICON.check + '</span></span>' +
-    '<span class="grow"><span class="t1">点名 · 倒计时</span><span class="t2">随机点名、课堂计时，同步大屏</span></span><span class="arrow">›</span></button>' +
+    '<span class="grow"><span class="t1">点名 · 抽人 · 倒计时</span><span class="t2">随机点名、抽人回答、课堂计时，同步大屏</span></span><span class="arrow">›</span></button>' +
 
     '<div class="card"><div class="card-label">账号</div>' +
     '<p class="iframe-note" style="margin:0 0 12px">当前用<b>姓名</b>登录，不需要密码。姓名和班级绑定保存在这台设备上；换手机或换电脑时，重新输入姓名、再输入一次<b>绑定码</b>就能回到原来的班级。</p>' +
@@ -551,7 +602,8 @@ function renderMore() {
     '<p class="iframe-note" style="margin:0">• 教室电脑打开「教室大屏」，输入一次<b>绑定码</b>即可，不用登录；点一次<b>启用声音</b>后保持常开。<br>' +
     '• 对讲：按住说话，松开后大屏立即播放，记录可在「记录」里回放。<br>' +
     '• 定时：放学提醒、眼保健操建班时已自动创建，可在「记录 → 定时任务」改时间或暂停。<br>' +
-    '• 多老师：把绑定码给同事，他们扫码登录后输入同一绑定码，即可同时绑定本班。</p></div>';
+    '• 记录：可在「记录」里逐条删除，超过 <b>24 小时</b>的会自动清掉（定时任务不受影响）。<br>' +
+    '• 多老师：把绑定码给同事，他们输入同一绑定码，即可同时绑定本班。</p></div>';
 }
 
 /* ---------- 定时任务列表 ---------- */
@@ -642,7 +694,13 @@ function openRosterSheet() {
   openModal('管理花名册（' + (nameOf(T.classId) || '班级') + '）',
     '<div class="field"><label>每行一个名字（也可用逗号、空格分隔），保存会覆盖原名单</label>' +
     '<textarea id="roster-input" rows="8" placeholder="张小明&#10;李小红&#10;王小雨">' + esc(T.cache.students.map(s => s.name).join('\n')) + '</textarea></div>' +
+    '<button class="btn ghost block sm mb12" id="roster-sample">' + ICON.plus + '填入示例名单（10 人，可再改）</button>' +
     '<button class="btn block lg" id="roster-save">保存花名册</button>');
+  $('#roster-sample').onclick = () => {
+    const ta = $('#roster-input');
+    const cur = ta.value.split(/[\n,，、\s]+/).map(x => x.trim()).filter(Boolean);
+    ta.value = cur.concat(SAMPLE_NAMES).filter((v, i, a) => a.indexOf(v) === i).join('\n');
+  };
   $('#roster-save').onclick = async () => {
     const names = $('#roster-input').value.split(/[\n,，、\s]+/).map(x => x.trim()).filter(Boolean);
     await C.setStudents(T.classId, names);
@@ -655,13 +713,16 @@ function openRosterSheet() {
 function openReceiptModal(msgId) {
   const m = T.cache.messages.find(x => String(x.id) === String(msgId)); if (!m) return;
   const rc = receiptsFor(m.id);
-  const gotIds = rc.map(r => String(r.data.student_id));
-  const miss = T.cache.students.filter(s => !gotIds.includes(String(s.id)));
+  const coll = rc.find(r => r.data && (r.data.collective || String(r.data.student_id) === 'all'));
+  const named = rc.filter(r => !(r.data.collective || String(r.data.student_id) === 'all'));
+  const when = coll ? (coll.data.ts ? new Date(coll.data.ts) : new Date(coll.created_at)) : null;
+  const head = '<div class="tag-chip mb12">' + esc(m.data.tag || (m.data.type === 'image' ? '图片通知' : '通知')) + '</div>';
+  const body = coll
+    ? '<div class="rc-done">✓ 班级已收到</div><div class="center muted small">' + fmtMDHM(when.getTime()) + ' · 大屏上点的</div>'
+    : '<div class="rc-wait">还没收到</div><div class="center muted small mt12">通知还挂在教室大屏上，<br>学生在屏幕上点一下「收到了」就行。</div>';
   openModal('收到情况 · ' + fmtMDHM(new Date(m.created_at).getTime()),
-    '<div class="tag-chip mb12">' + esc(m.data.tag || (m.data.type === 'image' ? '图片通知' : '通知')) + ' · 已收到 ' + rc.length + ' 人</div>' +
-    (rc.length ? '<div class="card-label" style="margin:6px 0">已收到</div><div class="pills mb12">' + rc.map(r => '<span class="pill soft active" style="cursor:default">' + esc(r.data.name) + '</span>').join('') + '</div>' : '') +
-    (miss.length ? '<div class="card-label" style="margin:6px 0">未收到</div><div class="pills">' + miss.map(s => '<span class="pill soft" style="cursor:default">' + esc(s.name) + '</span>').join('') + '</div>'
-      : (rc.length ? '<div class="center muted small mt12">全班都已收到</div>' : '<div class="center muted small mt12">还没有人确认收到</div>')));
+    head + body +
+    (named.length ? '<div class="card-label" style="margin:14px 0 6px">另外点名确认的同学</div><div class="pills">' + named.map(r => '<span class="pill soft active" style="cursor:default">' + esc(r.data.name) + '</span>').join('') + '</div>' : ''));
 }
 
 /* ---------- 事件 ---------- */
@@ -676,6 +737,13 @@ function bindEvents() {
   $('#btn-open-screen').addEventListener('click', () => window.open('screen.html', '_blank'));
   $('#go-rollcall').addEventListener('click', () => { location.href = 'rollcall.html'; });
   $('#go-timer').addEventListener('click', () => { location.href = 'rollcall.html#timer'; });
+  $('#go-draw').addEventListener('click', () => { location.href = 'rollcall.html#draw'; });
+  $('#btn-timer-stop').addEventListener('click', async () => {
+    const cid = T.classId || T.targets[0];
+    if (!cid) { toast('请先选择班级'); return; }
+    await TimerC.reset(cid);
+    toast('倒计时已停止', true);
+  });
 
   // 发给
   $('#btn-select-all').addEventListener('click', () => {
@@ -793,6 +861,19 @@ function bindEvents() {
       renderPills(); renderCta(); return;
     }
     const playBtn = e.target.closest('[data-play]'); if (playBtn) { playVoice(playBtn.dataset.play, playBtn); return; }
+    const del = e.target.closest('[data-delmsg]');
+    if (del) {
+      const id = del.dataset.delmsg;
+      if (!confirm('删除这条记录？删除后不能恢复。')) return;
+      del.closest('.msg-card').style.opacity = '.4';
+      try {
+        await C.deleteMessage(id);
+        T.cache.messages = T.cache.messages.filter(m => String(m.id) !== String(id));
+        T.cache.receipts = T.cache.receipts.filter(r => String(r.data.msg_id) !== String(id));
+        renderFeed(); renderLog(); toast('已删除', true);
+      } catch (err) { toast('删除失败：' + (err.message || err)); renderFeed(); renderLog(); }
+      return;
+    }
     const img = e.target.closest('.msg-img'); if (img && img.src) { openModal('图片预览', '<img src="' + img.src + '" style="border-radius:14px;width:100%">'); return; }
     const rc = e.target.closest('[data-receipt]'); if (rc) { openReceiptModal(rc.dataset.receipt); return; }
     const sc = e.target.closest('[data-setclass]'); if (sc) { setClass(+sc.dataset.setclass); renderClassTab(); renderPills(); return; }
@@ -879,7 +960,6 @@ async function handleAction(action) {
     }
     case 'edit-roster': openRosterSheet(); break;
     case 'open-screen': window.open('screen.html', '_blank'); break;
-    case 'open-student': window.open('student.html', '_blank'); break;
     case 'open-rollcall': window.open('rollcall.html', '_blank'); break;
   }
 }

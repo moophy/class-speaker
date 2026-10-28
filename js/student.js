@@ -1,109 +1,166 @@
-/* ============ 班级小喇叭 · 学生收到页（云版） ============ */
+/* ============ 班级小喇叭 · 收到页（班级共用：一个按钮，点完自动关） ============ */
 'use strict';
 
-const ST = { classId: null, studentId: null };
+/* 注意：不要用 ST 作变量名，js/cloud.js 里已有 const ST = cloud.storage */
+const STU = { classId: null, latest: null, cls: null, receivedId: null };
 
 document.addEventListener('DOMContentLoaded', () => {
-  $('#st-logo').innerHTML = ICON.users;
-  Sound.init(); TTS.init();
-  let saved = {}; try { saved = JSON.parse(localStorage.getItem('cs_student') || '{}'); } catch (e) {}
-  ST.classId = saved.classId || null; ST.studentId = saved.studentId || null;
-  bootStudent();
+  $('#st-logo').innerHTML = ICON.check;
+  let saved = {};
+  try { saved = JSON.parse(localStorage.getItem('cs_student') || '{}'); } catch (e) {}
+  STU.classId = saved.classId || null;
+  bindEvents();
+  boot();
 });
 
-/* 学生端不需要登录：带 ?code= 自动绑定，否则页面里输入绑定码 */
-async function bootStudent() {
+function bindEvents() {
+  $('#st-join').addEventListener('click', joinByCode);
+  $('#st-code').addEventListener('keydown', e => { if (e.key === 'Enter') joinByCode(); });
+  const sw = $('#st-switch'); if (sw) sw.addEventListener('click', () => { STU.classId = null; save(); render(); });
+  const rb = $('#st-receipt'); if (rb) rb.addEventListener('click', confirmReceipt);
+}
+
+function save() {
+  try { localStorage.setItem('cs_student', JSON.stringify({ classId: STU.classId })); } catch (e) {}
+}
+
+/* 带 ?code=123456 打开时自动绑定 */
+async function boot() {
   const uq = ClassBind.urlCode();
   if (uq) {
-    try { const c = await ClassBind.resolve(uq); if (c) { ST.classId = c.id; ST.studentId = null; save(); } } catch (e) {}
-  } else if (!ST.classId) {
-    const savedCls = ClassBind.get();
-    if (savedCls) { ST.classId = savedCls; save(); }
+    try {
+      const c = await ClassBind.resolve(uq);
+      if (c) { STU.classId = c.id; save(); }
+    } catch (e) {}
+  } else if (!STU.classId) {
+    const saved = ClassBind.get();
+    if (saved) STU.classId = saved;
   }
-  if (ST.classId) ClassBind.set(ST.classId);
-  start();
+  if (STU.classId) ClassBind.set(STU.classId);
+  await render();
+  setInterval(refreshQuiet, 5000);          // 倒计时/通知静默刷新
 }
 
-function start() {
-  bindEvents();
-  renderAll();
-  setInterval(renderAll, 2000);
+async function joinByCode() {
+  const code = ($('#st-code').value || '').replace(/\D/g, '');
+  if (code.length !== 6) { toast('请输入 6 位绑定码'); return; }
+  const c = await C.clsByCode(code).catch(() => null);
+  if (!c) { toast('绑定码不存在，请核对'); return; }
+  STU.classId = c.id; ClassBind.set(c.id); save();
+  toast('已进入 ' + c.name, true);
+  await render();
 }
 
-function save() { localStorage.setItem('cs_student', JSON.stringify({ classId: ST.classId, studentId: ST.studentId })); }
-function meStudent() { return ST.studentId ? (ST._students || []).find(s => String(s.id) === String(ST.studentId)) : null; }
+async function render() {
+  const setup = $('#st-setup'), pick = $('#st-pick'), main = $('#st-main');
+  if (pick) pick.hidden = true;              // 不再选人，整班共用一台设备
+  if (!STU.classId) { setup.hidden = false; main.hidden = true; return; }
 
-function bindEvents() {
-  $('#st-switch').addEventListener('click', pickStudent);
-  $('#st-join').addEventListener('click', async () => {
-    const code = $('#st-code').value.trim();
-    if (!/^\d{6}$/.test(code)) { toast('请输入 6 位绑定码'); return; }
-    const c = await C.clsByCode(code);
-    if (!c) { toast('绑定码不存在'); return; }
-    ST.classId = c.id; ST.studentId = null; ClassBind.set(c.id); save(); pickStudent();
-  });
-  $$('[data-close]').forEach(b => b.addEventListener('click', () => $('#' + b.dataset.close).classList.remove('show')));
-  document.addEventListener('click', async e => {
-    const pk = e.target.closest('[data-pickstudent]'); if (pk) { ST.studentId = pk.dataset.pickstudent; save(); $('#sheet-modal').classList.remove('show'); renderAll(); return; }
-    const rc = e.target.closest('[data-streceipt]'); if (rc) {
-      const me = meStudent(); if (!me) { pickStudent(); return; }
-      const ok = await C.addReceipt(rc.dataset.streceipt, ST.classId, { id: me.id, name: me.name });
-      toast(ok ? '已确认收到' : '你已经确认过啦', ok); renderAll(); return;
-    }
-    const pb = e.target.closest('[data-play]'); if (pb) {
-      Sound.unlock(); Store.signedUrl(pb.dataset.play).then(url => { if (!url) return; const a = new Audio(url); a.play().catch(() => toast('播放失败，请点击页面后重试')); });
-      return;
-    }
-  });
+  let cls = null;
+  try { cls = await C.cls(STU.classId); } catch (e) {}
+  if (!cls) { STU.classId = null; save(); setup.hidden = false; main.hidden = true; return; }
+  STU.cls = cls;
+
+  setup.hidden = true; main.hidden = false;
+  const sw = $('#st-switch'); if (sw) sw.hidden = true;
+  $('#st-avatar').textContent = '班';
+  $('#st-name').textContent = cls.name;
+  $('#st-class').textContent = '班级共用设备 · 不用选人';
+
+  let list = [];
+  try { list = await C.listMessages(STU.classId, 1); } catch (e) {}
+  STU.latest = list[0] || null;
+  await syncReceiptState();
+  renderLatest();
+  renderTimer();
 }
 
-async function pickStudent() {
-  if (!ST.classId) return;
-  ST._students = await C.listStudents(ST.classId);
-  $('#modal-title').textContent = '我是谁？（选择你的名字）';
-  $('#modal-body').innerHTML = ST._students.length
-    ? '<div class="pills">' + ST._students.map(s => '<button class="pill' + (String(s.id) === String(ST.studentId) ? ' active' : '') + '" data-pickstudent="' + s.id + '">' + esc(s.name) + '</button>').join('') + '</div>'
-    : '<div class="empty">老师还没录入花名册，暂时无法确认收到</div>';
-  $('#sheet-modal').classList.add('show');
+/* 大屏或本页已经点过「收到了」，进来就显示已收到 */
+async function syncReceiptState() {
+  const m = STU.latest;
+  if (!m) return;
+  try {
+    const rc = await C.receiptsOf(m.id);
+    const got = rc.some(r => r.data && (r.data.collective || String(r.data.student_id) === 'all'));
+    if (got) STU.receivedId = String(m.id);
+  } catch (e) {}
 }
 
-async function renderAll() {
-  const ok = ST.classId && await C.cls(ST.classId);
-  $('#st-setup').hidden = !!ok; $('#st-main').hidden = !ok;
-  if (!ok) return;
-  const c = await C.cls(ST.classId);
-  ST._students = await C.listStudents(ST.classId);
-  const me = meStudent();
-  $('#st-name').textContent = me ? me.name : '未选择姓名';
-  $('#st-class').textContent = (c ? c.name : '') + '（点击右上角换人）';
-  $('#st-avatar').textContent = me ? me.name.slice(0, 1) : '生';
-  const list = await C.listMessages(ST.classId, 20);
-  const receipts = await C.receiptsOfClass(ST.classId);
-  const latest = list[0];
-  $('#st-latest').innerHTML = latest ? noticeHtml(latest, receipts, true) : '<div class="empty">还没有通知</div>';
-  hydrate($('#st-latest'));
-  $('#st-feed').innerHTML = list.slice(1, 11).map(m => noticeHtml(m, receipts, false)).join('');
-  hydrate($('#st-feed'));
-  renderTimerCard();
+/* 只刷新通知与倒计时，不动按钮状态（避免点之前被重绘） */
+async function refreshQuiet() {
+  if (!STU.classId) return;
+  try {
+    const list = await C.listMessages(STU.classId, 1);
+    STU.latest = list[0] || null;
+    renderLatest();
+    renderTimer();
+  } catch (e) {}
 }
 
-function noticeHtml(m, receipts, isLatest) {
-  const d = m.data; const me = meStudent();
-  const rc = receipts.filter(r => String(r.data.msg_id) === String(m.id));
-  const mine = me && rc.some(r => String(r.data.student_id) === String(me.id));
+let _lastMsgKey = '';
+function renderLatest() {
+  const m = STU.latest;
+  const box = $('#st-latest');
+  if (!m) {
+    box.innerHTML = '<div class="empty">还没有通知</div>';
+    $('#st-time').textContent = '';
+    $('#st-action').innerHTML = '<button class="btn st-big-btn" disabled>暂无通知</button>';
+    $('#st-hint').textContent = '';
+    return;
+  }
+  const d = m.data || {};
   let body = '';
   if (d.type === 'text') body = '<div class="msg-text">' + esc(d.text) + '</div>';
-  else if (d.type === 'image') body = (d.text ? '<div class="msg-text mb8">' + esc(d.text) + '</div>' : '') + '<img class="msg-img" data-mpath="' + esc(d.mediaPath) + '">';
-  else body = '<button class="play-btn" data-play="' + esc(d.mediaPath) + '">' + ICON.play + '播放 ' + fmtDur(d.duration || 0) + '</button>';
-  return '<div class="msg-card"><div class="msg-head"><span class="tag-chip">' + esc(d.tag || (d.type === 'image' ? '图片通知' : d.type === 'voice' ? (d.live ? '对讲' : '语音留言') : '通知')) + '</span><span class="muted small" style="margin-left:auto">' + fmtMDHM(new Date(m.created_at).getTime()) + '</span></div>' +
-    body + '<div class="msg-foot"><span class="who">' + esc(m.name || '') + ' · 全班 ' + rc.length + ' 人已收到</span>' +
-    (mine ? '<span class="receipt-btn done">' + ICON.check + '我已收到</span>' : '<button class="receipt-btn" data-streceipt="' + m.id + '" style="border:none">' + ICON.check + '点击收到</button>') + '</div></div>';
+  else if (d.type === 'image') body = '<div class="msg-text mb8">📷 老师发了一张图片</div>' + (d.text ? '<div class="msg-text">' + esc(d.text) + '</div>' : '');
+  else body = '<div class="msg-text">🎙 ' + (d.live ? '老师刚发了一段对讲' : '老师发了一段语音') + '</div>';
+  const key = String(m.id) + '|' + String(d.ts || '');
+  if (key !== _lastMsgKey) {
+    _lastMsgKey = key;
+    box.innerHTML = body;
+    $('#st-time').textContent = fmtHM(new Date(m.created_at).getTime());
+    const already = STU.receivedId === String(m.id);
+    $('#st-action').innerHTML = already
+      ? '<div class="st-done">' + ICON.check + '<div class="t">已收到</div><div class="s">老师那边已经记下了</div></div>'
+      : '<button class="btn st-big-btn" id="st-receipt">收到了</button>';
+    $('#st-hint').textContent = already ? '' : '点一下就好，老师那边会显示「班级已收到」';
+    bindReceiptBtn();
+  }
 }
-function hydrate(root) { $$('[data-mpath]', root).forEach(img => { Store.signedUrl(img.dataset.mpath).then(u => { if (u) img.src = u; }); }); }
 
-async function renderTimerCard() {
-  const t = await C.getTimer(ST.classId);
-  const card = $('#st-timer-card');
-  if (!t || t.class_id !== ST.classId) { card.hidden = true; return; }
-  card.hidden = false; $('#st-timer').textContent = t.data.finishedAt != null ? '时间到' : fmtMMSS(TimerC.remainMs(t) / 1000);
+function bindReceiptBtn() { const b = $('#st-receipt'); if (b) b.onclick = confirmReceipt; }
+
+/* 点「收到了」：写整班回执 → 提示 → 自动关闭页面 */
+async function confirmReceipt() {
+  const m = STU.latest;
+  if (!m) return;
+  const btn = $('#st-receipt');
+  if (btn) { btn.disabled = true; btn.textContent = '正在提交…'; }
+  try {
+    await C.addReceipt(m.id, STU.classId, { id: 'all', name: '全班', collective: true });
+  } catch (e) {
+    if (btn) { btn.disabled = false; btn.textContent = '收到了'; }
+    toast('网络不太好，请再点一次');
+    return;
+  }
+  STU.receivedId = String(m.id);
+  $('#st-action').innerHTML = '<div class="st-done">' + ICON.check + '<div class="t">已收到</div><div class="s" id="st-close-tip">正在关闭页面…</div></div>';
+  $('#st-hint').textContent = '';
+  if (navigator.vibrate) { try { navigator.vibrate(60); } catch (e) {} }
+  // 先试着自己关掉（微信/浏览器里通常会被拦），关不掉就提示手动关闭
+  setTimeout(() => {
+    try { window.close(); } catch (e) {}
+    setTimeout(() => {
+      const tip = $('#st-close-tip');
+      if (tip && !document.hidden) tip.textContent = '好了，可以关掉这个页面了';
+    }, 700);
+  }, 500);
+}
+
+async function renderTimer() {
+  const card = $('#st-timer-card'); if (!card) return;
+  let t = null;
+  try { t = await C.getTimer(STU.classId); } catch (e) {}
+  if (!t || t.class_id !== STU.classId || t.data.finishedAt != null) { card.hidden = true; return; }
+  card.hidden = false;
+  $('#st-timer').textContent = fmtMMSS(TimerC.remainMs(t) / 1000);
 }

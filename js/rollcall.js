@@ -37,6 +37,11 @@ function start() {
   renderAll();
   setInterval(() => { renderCountdown(); autoTick(); }, 500);
   setInterval(renderAll, 2500);
+  // #timer / #draw 直接定位到对应卡片
+  setTimeout(() => {
+    const target = location.hash === '#draw' ? $('#draw-card') : location.hash === '#timer' ? $('#cd-display') : null;
+    if (target) target.scrollIntoView({ block: 'center' });
+  }, 400);
 }
 
 function curClass() { return null; }
@@ -48,7 +53,7 @@ async function renderAll() {
     const cls = await C.cls(R.classId); $('#rc-class').textContent = cls ? cls.name : '未选班级';
     R._students = await C.listStudents(R.classId);
     $('#roster-count').textContent = R._students.length + ' 人';
-    await renderCountdown(); await renderRollcall(); await renderHistory();
+    await renderCountdown(); await renderRollcall(); await renderDraw(); await renderHistory();
   } catch (e) { console.warn(e); }
 }
 
@@ -76,10 +81,10 @@ async function renderCountdown() {
   disp.style.color = ''; disp.textContent = fmtMMSS(TimerC.remainMs(t) / 1000);
   if (t.data.running) {
     state.textContent = t.data.label + ' · 进行中（大屏同步显示）';
-    ctl.innerHTML = '<button class="btn ghost grow" id="cd-add">+1分钟</button><button class="btn gray grow" id="cd-pause">暂停</button><button class="btn ghost-danger" id="cd-finish">结束</button>';
+    ctl.innerHTML = '<button class="btn ghost grow" id="cd-add">＋1分钟</button><button class="btn gray grow" id="cd-pause">暂停</button><button class="btn ghost-danger grow" id="cd-stop">停止</button>';
     $('#cd-add').onclick = async () => { await TimerC.add(R.classId, 60); renderCountdown(); };
     $('#cd-pause').onclick = async () => { await TimerC.pause(R.classId); renderCountdown(); };
-    $('#cd-finish').onclick = async () => { await TimerC.finish(R.classId); renderCountdown(); };
+    $('#cd-stop').onclick = async () => { await TimerC.reset(R.classId); toast('倒计时已停止', true); renderCountdown(); };
   } else {
     state.textContent = t.data.label + ' · 已暂停';
     ctl.innerHTML = '<button class="btn grow" id="cd-resume">继续</button><button class="btn gray grow" id="cd-reset">重置</button>';
@@ -94,6 +99,38 @@ async function startCountdown() {
   const label = $('#cd-label').value.trim() || '倒计时';
   await TimerC.start(R.classId, label, Math.round(min * 60));
   toast('倒计时开始，大屏同步显示', true); renderCountdown();
+}
+
+/* ---------- 抽人回答（大屏负责转动与停止，这里只发指令） ---------- */
+function curDrawN() { const b = $('#draw-count .pill.active'); return b ? +b.dataset.dn : 1; }
+async function renderDraw() {
+  if (!R.classId) return;
+  const st = $('#draw-state'), res = $('#draw-result'), stopBtn = $('#btn-draw-stop'), startBtn = $('#btn-draw-start');
+  if (!st || !res) return;
+  let d = null;
+  try { const row = await C.drawState(R.classId); d = row && row.data; } catch (e) {}
+  if (!d || !d.status) { st.textContent = '未开始'; res.textContent = ''; stopBtn.hidden = true; startBtn.hidden = false; return; }
+  if (d.status === 'running') {
+    st.textContent = '转动中…'; res.textContent = '在大屏上点一下屏幕就停';
+    stopBtn.hidden = false; startBtn.hidden = true;
+  } else {
+    st.textContent = '已抽到';
+    res.textContent = (d.picked || []).join('、') || '—';
+    stopBtn.hidden = true; startBtn.hidden = false;
+  }
+}
+async function drawStart() {
+  if (!R.classId) { toast('请先选择班级'); return; }
+  await C.setDraw(R.classId, { status: 'running', multi: curDrawN(), picked: [], startedAt: Date.now(), stopAt: 0, endedAt: 0 });
+  toast('大屏开始转动，点大屏停止', true);
+  renderDraw();
+}
+async function drawStop() {
+  if (!R.classId) return;
+  let d = {};
+  try { const row = await C.drawState(R.classId); d = (row && row.data) || {}; } catch (e) {}
+  await C.setDraw(R.classId, Object.assign({}, d, { stopAt: Date.now() }));
+  renderDraw();
 }
 
 /* ---------- 点名 ---------- */
@@ -156,12 +193,25 @@ async function renderHistory() {
 function openRosterSheet() {
   if (!R.classId) { toast('请先在老师端选择班级'); return; }
   $('#modal-title').textContent = '管理花名册';
-  $('#modal-body').innerHTML = '<div class="field"><label>每行一个名字（或用逗号、空格分隔），保存将覆盖原名单</label><textarea id="roster-input" rows="8" placeholder="张小明&#10;李小红&#10;王小雨&#10;刘壮壮">' + esc((R._students || []).map(s => s.name).join('\n')) + '</textarea></div><button class="btn block lg" data-action="save-roster">保存花名册</button>';
+  $('#modal-body').innerHTML = '<div class="field"><label>每行一个名字（或用逗号、空格分隔），保存将覆盖原名单</label><textarea id="roster-input" rows="8" placeholder="张小明&#10;李小红&#10;王小雨&#10;刘壮壮">' + esc((R._students || []).map(s => s.name).join('\n')) + '</textarea></div>' +
+    '<button class="btn ghost block sm mb12" id="roster-sample-r">' + ICON.plus + '填入示例名单（10 人，可再改）</button>' +
+    '<button class="btn block lg" data-action="save-roster">保存花名册</button>';
+  const sb = $('#roster-sample-r');
+  if (sb) sb.onclick = () => {
+    const ta = $('#roster-input');
+    const cur = ta.value.split(/[\n,，、\s]+/).map(x => x.trim()).filter(Boolean);
+    ta.value = cur.concat(SAMPLE_NAMES).filter((v, i, a) => a.indexOf(v) === i).join('\n');
+  };
   $('#sheet-modal').classList.add('show');
 }
 
 function bindEvents() {
   $('#btn-back').addEventListener('click', () => location.href = 'index.html');
+  $$('#draw-count .pill').forEach(b => b.addEventListener('click', () => {
+    $$('#draw-count .pill').forEach(x => x.classList.remove('active')); b.classList.add('active');
+  }));
+  $('#btn-draw-start').addEventListener('click', drawStart);
+  $('#btn-draw-stop').addEventListener('click', drawStop);
   $$('#roll-mode-seg button').forEach(b => b.addEventListener('click', () => { $$('#roll-mode-seg button').forEach(x => x.classList.remove('active')); b.classList.add('active'); R.mode = b.dataset.v; }));
   $('#btn-roster').addEventListener('click', openRosterSheet);
   $('#btn-roll-start').addEventListener('click', startRollcall);

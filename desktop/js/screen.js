@@ -6,7 +6,9 @@ const S = {
   lastId: 0,
   queue: [],
   showing: null,
+  receipted: null,
   autoTimer: null,
+  marqueeTimer: null,
   audio: null,
   handledFinishAt: null,
   feedOpen: false,
@@ -15,13 +17,17 @@ const S = {
 
 document.addEventListener('DOMContentLoaded', () => {
   Sound.init(); TTS.init();
-  $('#unlock-btn').addEventListener('click', () => { Sound.unlock().then(() => { $('#unlock-layer').style.display = 'none'; toast('大屏已就绪', true); }); });
+  $('#unlock-btn').addEventListener('click', () => {
+    const layer = $('#unlock-layer');
+    if (layer) layer.style.display = 'none';        // 先关掉遮罩，声音在后台解锁
+    Sound.unlock().then(() => toast('大屏已就绪', true)).catch(() => {});
+  });
   $('#s-full').addEventListener('click', toggleFullscreen);
+  $('#s-draw').addEventListener('click', drawOpen);
   $('#s-feed-btn').addEventListener('click', () => { S.feedOpen = !S.feedOpen; $('#feed-panel').classList.toggle('show', S.feedOpen); if (S.feedOpen) renderFeedPanel(); });
   $('#s-cls').addEventListener('click', openClassPicker);
   $('#n-close').addEventListener('click', () => dismissNotice());
-  $('#n-receipt').addEventListener('click', () => openReceiptGrid());
-  $('#receipt-close').addEventListener('click', () => $('#receipt-overlay').classList.remove('show'));
+  $('#n-receipt').addEventListener('click', () => markReceived());
 
   bootScreen();
 });
@@ -51,6 +57,8 @@ async function bootScreen() {
 function start() {
   restoreClass().then(() => {
     Checker.start();
+    presencePing(); setInterval(presencePing, 20000);
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) presencePing(); });
     startClock(d => {
       $('#s-clock').textContent = pad2(d.getHours()) + ':' + pad2(d.getMinutes());
       $('#idle-time').textContent = pad2(d.getHours()) + ':' + pad2(d.getMinutes());
@@ -61,6 +69,12 @@ function start() {
     poll(); S.pollTimer = setInterval(poll, 1200);
     if (Sound.unlocked) $('#unlock-layer').style.display = 'none';
   });
+}
+
+/* 在线心跳：老师端据此在班级胶囊上显示「在线 / 离线」 */
+function presencePing() {
+  if (!S.classId) return;
+  C.setPresence(S.classId, { screen: Date.now() }).catch(() => {});
 }
 
 async function restoreClass() {
@@ -101,7 +115,7 @@ async function pickClass(id) {
   S.classId = id; ClassBind.set(id); localStorage.setItem('cs_screen', JSON.stringify({ classId: id }));
   S.lastId = 0; S.queue = []; dismissNotice(true);
   const msgs = await C.listMessages(id, 50); S.lastId = msgs.length ? Math.max.apply(null, msgs.map(m => +m.id)) : 0;
-  renderClassInfo(); renderFeedPanel();
+  renderClassInfo(); renderFeedPanel(); presencePing();
   toast('大屏已切换', true);
 }
 
@@ -122,6 +136,7 @@ async function poll() {
     }
     await renderTimerLayer();
     await renderRollLayer();
+    await syncDraw();
     renderIdleNext();
   } catch (e) { /* network */ }
 }
@@ -146,25 +161,35 @@ function noticeFont(text, size, popup, hasImg) {
   return Math.round(best * k) + 'px';
 }
 function applyDisplayMode(d) {
-  const popup = d && d.displayMode === 'popup' && d.type !== 'voice';
-  $('#notice-layer').classList.toggle('popup', !!popup);
+  const layer = $('#notice-layer');
+  const type = d && d.type;
+  // 图片通知：一律铺满整屏放大显示，不再用弹窗
+  if (type === 'image') { layer.classList.remove('popup'); layer.classList.add('imgfull'); return; }
+  layer.classList.remove('imgfull');
+  const popup = d && d.displayMode === 'popup' && type !== 'voice';
+  layer.classList.toggle('popup', !!popup);
 }
 
 function showNext() {
   if (S.showing || !S.queue.length) return;
   const m = S.queue.shift(); S.showing = m;
   const d = m.data; const layer = $('#notice-layer');
+  // 跑马灯：不占整屏，只在底部横向滚动
+  if (d.displayMode === 'marquee' && d.type === 'text') { showMarquee(m); return; }
   applyDisplayMode(d);
   layer.classList.add('show');
   $('#n-tag').textContent = d.tag || (d.type === 'image' ? '图片通知' : d.type === 'voice' ? (d.live ? '对讲' : '语音留言') : '班级通知');
-  $('#n-who').textContent = (m.name || '') + ' · ' + fmtHM(new Date(m.created_at).getTime());
+  $('#n-who').textContent = m.name || '老师';
+  $('#n-time').textContent = '· ' + fmtHM(new Date(m.created_at).getTime());
+  S.receipted = null; resetReceiptBtn(m);
   bringToFront();
   if (d.type === 'text') {
     $('#n-body').innerHTML = '<div class="notice-text" style="font-size:' + noticeFont(d.text, d.fontSize, d.displayMode === 'popup') + '">' + esc(d.text) + '</div>';
     const afterRead = () => autoDismiss((d.displaySec == null ? 15 : d.displaySec) * 1000);
     if (Sound.unlocked && d.tts !== false) TTS.speak(d.text, d.readTimes || 1, afterRead); else afterRead();
   } else if (d.type === 'image') {
-    $('#n-body').innerHTML = (d.text ? '<div class="notice-text" style="font-size:' + noticeFont(d.text, d.fontSize, d.displayMode === 'popup', true) + ';margin-bottom:2.4vh">' + esc(d.text) + '</div>' : '') + '<img class="notice-img" id="n-img">';
+    $('#n-body').innerHTML = '<img class="notice-img" id="n-img">' +
+      (d.text ? '<div class="notice-cap" style="font-size:' + noticeFont(d.text, d.fontSize, true, true) + '">' + esc(d.text) + '</div>' : '');
     Store.signedUrl(d.mediaPath).then(u => { const el = $('#n-img'); if (el && u) el.src = u; });
     const afterRead = () => autoDismiss((d.displaySec == null ? 15 : d.displaySec) * 1000);
     if (Sound.unlocked && d.text && d.tts !== false) TTS.speak(d.text, d.readTimes || 1, afterRead); else afterRead();
@@ -173,52 +198,113 @@ function showNext() {
     playNoticeVoice(m);
   }
 }
+
+/* 语音：按「播放次数」重复播完再收起（对讲只播一遍） */
 function playNoticeVoice(m) {
-  Store.signedUrl(m.data.mediaPath).then(url => {
+  const d = m.data || {};
+  const times = d.live ? 1 : Math.max(1, +(d.readTimes || 1));
+  if (d.live) $('#n-tag').textContent = '对讲';
+  Store.signedUrl(d.mediaPath).then(url => {
     if (!url) { toast('语音加载失败'); autoDismiss(3000); return; }
-    stopAudio(); const audio = new Audio(url); S.audio = audio;
-    audio.onended = () => { S.audio = null; autoDismiss(1200); };
-    audio.play().catch(() => { toast('请点击屏幕启用声音'); autoDismiss(8000); });
+    let n = 0;
+    const playOnce = () => {
+      stopAudio();
+      const audio = new Audio(url); S.audio = audio;
+      audio.onended = () => {
+        S.audio = null; n++;
+        if (n < times) { setTimeout(() => { if (S.showing === m) playOnce(); }, 600); }
+        else autoDismiss(1200);
+      };
+      audio.play().catch(() => { toast('请点击屏幕启用声音'); autoDismiss(8000); });
+    };
+    playOnce();
   });
 }
+
+/* ---------- 跑马灯（底部横向滚动） ---------- */
+function showMarquee(m) {
+  const d = m.data; const text = String(d.text || '').trim();
+  if (!text) { S.showing = null; setTimeout(showNext, 200); return; }
+  const layer = $('#marquee-layer'), track = $('#marquee-track');
+  hideMarquee();
+  $('#mq-who').textContent = (m.name || '老师') + ' · ' + fmtHM(new Date(m.created_at).getTime());
+  const unit = text + '　　·　　';
+  const rep = Math.max(1, Math.ceil(46 / Math.max(1, text.length)));
+  track.innerHTML = '';
+  for (let i = 0; i < 2; i++) {
+    const s = document.createElement('span');
+    s.className = 'mq-item';
+    s.textContent = unit.repeat(rep);
+    track.appendChild(s);
+  }
+  track.style.animation = 'none';
+  void track.offsetWidth;
+  track.style.animation = 'marqueeScroll ' + Math.max(16, text.length * 0.5) + 's linear infinite';
+  layer.classList.add('show');
+  bringToFront();
+  if (Sound.unlocked && d.tts !== false) TTS.speak(text, d.readTimes || 1);
+  const ms = (d.displaySec == null ? 30 : d.displaySec) * 1000;
+  clearTimeout(S.marqueeTimer);
+  S.marqueeTimer = setTimeout(() => { hideMarquee(); S.showing = null; setTimeout(showNext, 200); }, ms > 0 ? ms : 30000);
+}
+function hideMarquee() {
+  clearTimeout(S.marqueeTimer);
+  const l = $('#marquee-layer'); if (l) l.classList.remove('show');
+}
+
 function stopAudio() { if (S.audio) { try { S.audio.pause(); } catch (e) {} S.audio = null; } }
 function autoDismiss(ms) { clearTimeout(S.autoTimer); if (!ms || ms <= 0) return; S.autoTimer = setTimeout(() => dismissNotice(), ms); }
 function dismissNotice(silent) {
-  clearTimeout(S.autoTimer); stopAudio(); TTS.stop();
-  $('#notice-layer').classList.remove('show'); S.showing = null;
+  clearTimeout(S.autoTimer); stopAudio(); TTS.stop(); hideMarquee();
+  $('#notice-layer').classList.remove('show');
+  S.showing = null;
   setTimeout(showNext, 250);
 }
 function interruptForVoice(m) {
-  clearTimeout(S.autoTimer);
+  clearTimeout(S.autoTimer); hideMarquee();
   if (S.showing) { stopAudio(); TTS.stop(); $('#notice-layer').classList.remove('show'); S.showing = null; }
   S.queue = S.queue.filter(x => +x.id !== +m.id);
   S.showing = m;
   applyDisplayMode({ type: 'voice' });
   $('#notice-layer').classList.add('show');
   $('#n-tag').textContent = '对讲';
-  $('#n-who').textContent = (m.name || '老师') + ' · ' + fmtHM(new Date(m.created_at).getTime());
+  $('#n-who').textContent = m.name || '老师';
+  $('#n-time').textContent = '· ' + fmtHM(new Date(m.created_at).getTime());
   $('#n-body').innerHTML = '<div class="notice-voice">' + ICON.volume + '<span class="lbl">' + esc(m.name || '老师') + ' 正在对讲</span></div>';
+  S.receipted = null; resetReceiptBtn(m);
   bringToFront();
   playNoticeVoice(m);
 }
 
-/* ---------- 收到（花名册网格） ---------- */
-function openReceiptGrid() {
-  const m = S.showing; if (!m) return;
-  C.listStudents(S.classId).then(students => {
-    if (!students.length) { C.addReceipt(m.id, S.classId, { id: 'all', name: '全班' }).then(() => toast('已记录全班收到', true)); return; }
-    C.receiptsOf(m.id).then(rc => {
-      const got = rc.map(r => String(r.data.student_id));
-      $('#receipt-grid').innerHTML = students.map(s =>
-        '<button class="' + (got.includes(String(s.id)) ? 'done' : '') + '" data-rcv="' + s.id + '" data-name="' + esc(s.name) + '" data-msg="' + m.id + '">' + esc(s.name) + '</button>'
-      ).join('');
-      $('#receipt-overlay').classList.add('show');
-    });
-  });
+/* ---------- 收到（整班一次确认，学生不用逐个点） ---------- */
+function resetReceiptBtn(m) {
+  const btn = $('#n-receipt'); if (!btn) return;
+  const live = m && m.data && m.data.live;
+  btn.classList.remove('done');
+  btn.disabled = false;
+  btn.textContent = '收到了';
+  // 对讲没有"收到确认"这回事，藏起来
+  btn.style.display = live ? 'none' : '';
+}
+
+async function markReceived() {
+  const m = S.showing; if (!m || !S.classId) return;
+  if (S.receipted === String(m.id)) return;
+  const btn = $('#n-receipt');
+  S.receipted = String(m.id);
+  btn.classList.add('done'); btn.disabled = true; btn.textContent = '✓ 已收到';
+  try {
+    await C.addReceipt(m.id, S.classId, { id: 'all', name: '全班', collective: true });
+    toast('老师端已显示「班级已收到」', true);
+    TTS.stop();
+    setTimeout(() => { if (S.showing === m) dismissNotice(); }, 1600);
+  } catch (e) {
+    S.receipted = null; btn.classList.remove('done'); btn.disabled = false; btn.textContent = '收到了';
+    toast('没记上，再点一次');
+  }
 }
 
 document.addEventListener('click', async e => {
-  const b = e.target.closest('[data-rcv]'); if (b) { await C.addReceipt(b.dataset.msg, S.classId, { id: b.dataset.rcv, name: b.dataset.name }); b.classList.add('done'); return; }
   const pc = e.target.closest('[data-pickclass]'); if (pc) { pickClass(+pc.dataset.pickclass); closeScreenModal(); return; }
   const bc = e.target.closest('[data-bind-code]');
   if (bc) {
@@ -322,3 +408,131 @@ function renderIdleNext() {
     if (cand.length) { chip.hidden = false; chip.textContent = '下一个：' + cand[0].name + ' · ' + cand[0].data.time; } else chip.hidden = true;
   });
 }
+
+/* ---------- 抽人回答（名字不停转动，点击屏幕停止） ---------- */
+const D = { running: false, multi: 1, picked: [], students: [], spin: null, startedAt: 0, ackStop: 0, lastDone: 0, hideTimer: null };
+
+async function drawOpen() {
+  if (!S.classId) { toast('请先选择班级'); return; }
+  const ss = await C.listStudents(S.classId);
+  if (!ss.length) {
+    openScreenModal('抽人回答', '<div class="empty">还没有花名册<br>请先在老师端「班级 → 管理花名册」里录入学生姓名</div>');
+    return;
+  }
+  openScreenModal('抽人回答',
+    '<p class="iframe-note" style="margin:0 0 12px">选一次抽几个人，点「开始转动」，名字会快速滚动；<b>再点一下屏幕就停</b>。</p>' +
+    '<div class="pills mb12" id="draw-count-pills">' +
+      [1, 2, 3, 5].map(n => '<button class="pill' + (n === 1 ? ' active' : '') + '" data-dn="' + n + '">' + n + ' 人</button>').join('') +
+    '</div>' +
+    '<button class="btn block lg" id="draw-go">开始转动</button>');
+  $$('#draw-count-pills .pill').forEach(b => b.addEventListener('click', () => {
+    $$('#draw-count-pills .pill').forEach(x => x.classList.remove('active')); b.classList.add('active');
+  }));
+  $('#draw-go').onclick = () => {
+    const act = $('#draw-count-pills .pill.active');
+    closeScreenModal();
+    drawStart(act ? +act.dataset.dn : 1);
+  };
+}
+
+async function drawStart(n) {
+  if (!S.classId) return;
+  const ss = await C.listStudents(S.classId);
+  if (!ss.length) { toast('请先录入花名册'); return; }
+  D.students = ss;
+  D.multi = Math.max(1, Math.min(+n || 1, ss.length));
+  D.running = true; D.picked = []; D.startedAt = Date.now();
+  clearTimeout(D.hideTimer);
+  const layer = $('#draw-layer');
+  layer.classList.add('show'); layer.classList.remove('done');
+  $('#draw-tip').textContent = '名字滚动中 · 点一下屏幕停止';
+  $('#draw-sub').textContent = '一次抽 ' + D.multi + ' 人';
+  $('#draw-name').classList.add('spinning');
+  spinTick();
+  clearInterval(D.spin);
+  D.spin = setInterval(spinTick, 70);
+  if (Sound.unlocked) Beep.play(1);
+  C.setDraw(S.classId, { status: 'running', multi: D.multi, picked: [], startedAt: D.startedAt, stopAt: 0, endedAt: 0 }).catch(() => {});
+}
+
+function spinTick() {
+  if (!D.students.length) return;
+  const pool = D.students.slice(), out = [];
+  for (let i = 0; i < D.multi && pool.length; i++) {
+    out.push(pool.splice(Math.floor(Math.random() * pool.length), 1)[0].name);
+  }
+  $('#draw-name').textContent = out.join('  ');
+}
+
+function drawStop() {
+  if (!D.running) return;
+  clearInterval(D.spin); D.spin = null; D.running = false;
+  const pool = D.students.slice(), out = [];
+  for (let i = 0; i < D.multi && pool.length; i++) {
+    out.push(pool.splice(Math.floor(Math.random() * pool.length), 1)[0]);
+  }
+  D.picked = out;
+  const names = out.map(s => s.name);
+  const endedAt = Date.now();
+  D.lastDone = endedAt;
+  const layer = $('#draw-layer');
+  $('#draw-name').classList.remove('spinning');
+  $('#draw-name').textContent = names.join('  ');
+  $('#draw-tip').textContent = names.length > 1 ? '请这几位同学回答问题' : '请这位同学回答问题';
+  $('#draw-sub').textContent = '点一下屏幕关闭';
+  layer.classList.add('done');
+  if (Sound.unlocked) { Beep.play(2); TTS.speak(names.join('、') + '，请回答问题', 1); }
+  C.setDraw(S.classId, { status: 'done', multi: D.multi, picked: names, startedAt: D.startedAt, stopAt: D.ackStop || 0, endedAt: endedAt }).catch(() => {});
+  clearTimeout(D.hideTimer);
+  D.hideTimer = setTimeout(() => { if (!D.running) hideDraw(); }, 30000);
+}
+
+function hideDraw() {
+  clearInterval(D.spin); D.spin = null; D.running = false;
+  const layer = $('#draw-layer');
+  if (layer) { layer.classList.remove('show'); layer.classList.remove('done'); }
+}
+
+function showDrawResult(names) {
+  if (!names || !names.length) return;
+  const layer = $('#draw-layer');
+  $('#draw-name').classList.remove('spinning');
+  $('#draw-name').textContent = names.join('  ');
+  $('#draw-tip').textContent = names.length > 1 ? '抽到的同学' : '抽到的同学';
+  $('#draw-sub').textContent = '点一下屏幕关闭';
+  layer.classList.add('show'); layer.classList.add('done');
+  clearTimeout(D.hideTimer);
+  D.hideTimer = setTimeout(() => { if (!D.running) hideDraw(); }, 30000);
+}
+
+/* 与云端同步：老师端点开始 / 停止也能生效 */
+async function syncDraw() {
+  if (!S.classId) return;
+  const row = await C.drawState(S.classId);
+  const d = row && row.data; if (!d) return;
+  if (d.status === 'running') {
+    if (D.running) {
+      if (d.stopAt && d.stopAt > (D.ackStop || 0)) { D.ackStop = d.stopAt; drawStop(); }
+      return;
+    }
+    // 上次打开页面时留下的「转动中」，超过 3 分钟就不再接手
+    if (d.startedAt && Date.now() - d.startedAt > 3 * 60 * 1000) return;
+    if (d.startedAt && D.startedAt && d.startedAt < D.startedAt) return;   // 旧的开始指令
+    if (d.startedAt) { D.startedAt = d.startedAt; drawStart(d.multi || 1); }
+    return;
+  }
+  if (d.status === 'done') {
+    // 本轮开始之前留下的旧结果，直接忽略（否则刚点开始就被旧结果打断）
+    if (d.endedAt && D.startedAt && d.endedAt < D.startedAt) return;
+    if (D.running) { D.ackStop = d.stopAt || D.ackStop; drawStop(); return; }
+    if (d.endedAt && d.endedAt !== D.lastDone) { D.lastDone = d.endedAt; showDrawResult(d.picked || []); }
+  }
+}
+
+document.addEventListener('click', e => {
+  if (e.target.closest('#s-draw') || e.target.closest('#draw-go') || e.target.closest('[data-dn]')) return;
+  const layer = e.target.closest('#draw-layer');
+  if (!layer) return;
+  if (D.running) { drawStop(); return; }
+  hideDraw();
+});

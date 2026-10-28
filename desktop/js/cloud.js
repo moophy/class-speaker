@@ -13,83 +13,32 @@ const AUTH = cloud.auth;
 function unwrap(r) { if (r && r.error) throw r.error; return r ? r.data : null; }
 function jval(v) { return v == null ? '' : String(v); }
 
-/* ---------- 认证（仅老师端需要：微信登录；其他端不登录） ---------- */
+/* ---------- 认证（仅老师端：姓名登录，无需密码；其他端不登录） ---------- */
 const TKEY = 'cs_teacher';          // 本地身份 { id, name }
-const NKEY = 'cs_teacher_name';     // 显示名（可覆盖微信昵称）
-
-function inWechat() { return /MicroMessenger/i.test(navigator.userAgent || ''); }
-
-/* 本站静态资源带分享门禁（缺 ?sharecode= 会落到「链接不完整」页），
-   所以 OAuth 的 callback_url 必须把分享参数一起带上，否则扫完码回来会被拦住。 */
-function siteUrl(keepQuery) {
-  try {
-    const u = new URL(location.href);
-    ['code', 'state', 'error', 'error_description'].forEach(k => u.searchParams.delete(k));
-    if (!keepQuery) { u.search = ''; }
-    return u.origin + u.pathname + (keepQuery && u.search ? u.search : '');
-  } catch (e) { return location.origin; }
-}
+const NKEY = 'cs_teacher_name';     // 显示名
 
 const Auth = {
   session: null, ready: false, _cbs: [], local: null,
   async init() {
     if (this.ready) return;
-    // 0) 兜底：若回调把 code 用「?」接在已有参数后面，先修成合法查询串
-    try {
-      const raw = location.search || '';
-      if (raw.indexOf('?code=') > 0 || raw.indexOf('?state=') > 0) {
-        const fixed = '?' + raw.slice(1).replace(/\?(?=code=|state=|error=)/g, '&');
-        history.replaceState(null, '', location.pathname + fixed);
-      }
-    } catch (e) {}
-    // 1) 微信网页授权回调：必须最先处理，code 只能用一次
-    if (typeof AUTH.handleWechatWebCallback === 'function') {
-      try {
-        const r = await AUTH.handleWechatWebCallback();
-        if (!r.error && r.data) {
-          this.session = r.data;
-          try { history.replaceState(null, '', siteUrl(true)); } catch (e) {}
-        }
-      } catch (e) { console.warn('wx-callback', e); }
-    }
-    // 2) 已有会话
-    if (!this.session) {
-      try { const r = await AUTH.getSession(); this.session = (!r.error && r.data) ? r.data : null; } catch (e) { this.session = null; }
-    }
-    // 3) 本地身份
+    // 只认本机身份：姓名登录，不接微信、不建云端会话
     try { this.local = JSON.parse(localStorage.getItem(TKEY) || 'null'); } catch (e) { this.local = null; }
     this.ready = true;
-    try { AUTH.onAuthStateChange(ev => { this.session = (ev && ev.session) ? ev.session : null; this._cbs.forEach(cb => cb(this.session)); }); } catch (e) {}
+    this._cbs.forEach(cb => cb(null));
   },
-  onSession(cb) { this._cbs.push(cb); if (this.ready) cb(this.session); },
-  isWechat() { return !!this.session; },
-  isLogged() { return !!this.session || !!(this.local && this.local.id); },
+  onSession(cb) { this._cbs.push(cb); if (this.ready) cb(null); },
+  isWechat() { return false; },
+  isLogged() { return !!(this.local && this.local.id); },
   uid() {
-    try { const u = this.session && this.session.user; if (u && u.id) return String(u.id); } catch (e) {}
     return (this.local && this.local.id) || null;
   },
   name() {
     let n = ''; try { n = localStorage.getItem(NKEY) || ''; } catch (e) {}
     if (n) return n;
-    try {
-      const u = this.session && this.session.user;
-      if (u) { const s = u.name || u.nickname || u.nickName || ''; if (s) return s; }
-    } catch (e) {}
     return (this.local && this.local.name) || '老师';
   },
   setName(n) { n = String(n || '').trim(); if (!n) return; try { localStorage.setItem(NKEY, n); } catch (e) {} },
-  /* 微信登录：返回 { ok, message }，成功后浏览器跳转到微信授权页 */
-  async signInWechat() {
-    try {
-      const r = await AUTH.signInWithOAuth({ provider: 'wechat', redirectTo: siteUrl(true) });
-      if (r && r.error) return { ok: false, message: String(r.error.message || r.error || '微信登录未开启') };
-      const url = r && r.data && (r.data.url || r.data.redirectUrl);
-      if (!url) return { ok: false, message: '没有拿到微信授权地址' };
-      location.assign(url);
-      return { ok: true };
-    } catch (e) { return { ok: false, message: (e && e.message) || String(e) }; }
-  },
-  /* 免微信：仅在本机记住一个身份（其他端本来也不需要登录） */
+  /* 姓名登录：仅在本机记住一个身份（其他端本来也不需要登录） */
   signInLocal(name) {
     const n = String(name || '').trim() || '老师';
     const id = (this.local && this.local.id) || ('t_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6));
@@ -113,41 +62,22 @@ const Auth = {
         '<div style="width:56px;height:56px;border-radius:18px;margin:0 auto 14px;background:linear-gradient(135deg,#00C97F,#00A86B);display:flex;align-items:center;justify-content:center">' +
           '<span style="color:#fff;font-size:26px;font-weight:800">喇</span></div>' +
         '<div style="font-size:22px;font-weight:800;color:#111;letter-spacing:-.3px">班级小喇叭</div>' +
-        '<p style="color:#8A9490;font-size:13px;margin:6px 0 24px">老师端 · 微信扫码登录</p>' +
-        '<button id="cs-login-btn" style="background:#07C160;color:#fff;border:none;border-radius:14px;padding:15px;font-size:16px;font-weight:700;width:100%;display:flex;align-items:center;justify-content:center;gap:8px">' +
-          '<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M8.7 3C4.9 3 1.8 5.6 1.8 8.8c0 1.8 1 3.4 2.7 4.5l-.7 2.1 2.4-1.2c.8.2 1.6.4 2.5.4h.6a5 5 0 0 1-.2-1.4c0-3 2.9-5.4 6.5-5.4h.7C15.6 5 12.5 3 8.7 3zm-2.4 3.5a.9.9 0 1 1 0 1.8.9.9 0 0 1 0-1.8zm4.8 0a.9.9 0 1 1 0 1.8.9.9 0 0 1 0-1.8z"/><path d="M22.2 13.2c0-2.7-2.7-4.9-6-4.9s-6 2.2-6 4.9 2.7 4.9 6 4.9c.7 0 1.4-.1 2-.3l2 1-.6-1.8c1.6-.9 2.6-2.3 2.6-3.8zm-8-1.2a.8.8 0 1 1 0 1.6.8.8 0 0 1 0-1.6zm4 0a.8.8 0 1 1 0 1.6.8.8 0 0 1 0-1.6z"/></svg>' +
-          '微信扫码登录</button>' +
-        '<p id="cs-login-tip" style="color:#9AA3A0;font-size:12px;line-height:1.65;margin:14px 0 0">' +
-          '点击后进入微信授权页，用微信扫码确认即可。<br>在微信里打开本页时可直接一键登录。</p>' +
-        '<div id="cs-login-err" style="display:none;margin-top:12px;background:#FFF3F3;border:1px solid #FFD9D9;border-radius:10px;padding:10px;color:#C0392B;font-size:12px;line-height:1.6;text-align:left"></div>' +
-        '<div style="border-top:1px solid #F0F3F2;margin:20px 0 12px"></div>' +
-        '<div id="cs-guest-box">' +
-          '<button id="cs-guest-toggle" style="background:none;border:none;color:#7A8683;font-size:12.5px;text-decoration:underline">微信打不开？用姓名直接进入</button>' +
-          '<div id="cs-guest-form" style="display:none;margin-top:12px">' +
-            '<input id="cs-guest-name" maxlength="12" placeholder="请输入你的姓名，如：王老师" style="width:100%;border:1.5px solid #E6EAE9;border-radius:12px;padding:12px;font-size:15px;margin-bottom:10px">' +
-            '<button id="cs-guest-go" class="btn block">用这个姓名进入</button>' +
-          '</div>' +
-        '</div>' +
+        '<p style="color:#8A9490;font-size:13px;margin:6px 0 20px">老师端 · 输入姓名即可使用</p>' +
+        '<input id="cs-login-name" maxlength="12" placeholder="你的姓名，如：王老师" ' +
+          'style="width:100%;border:1.5px solid #E6EAE9;border-radius:12px;padding:13px;font-size:16px;text-align:center;box-sizing:border-box">' +
+        '<button id="cs-login-go" class="btn block lg" style="margin-top:12px">进入</button>' +
+        '<p style="color:#9AA3A0;font-size:12px;line-height:1.65;margin:14px 0 0">' +
+          '姓名只用来在大屏和记录里显示是谁发的，不需要密码。<br>进入后输入班级绑定码，就能收发通知。</p>' +
       '</div>';
     document.body.appendChild(ov);
-    const err = m => { const el = $('#cs-login-err'); if (!el) return; el.style.display = m ? 'block' : 'none'; el.textContent = m || ''; };
-    $('#cs-login-btn').onclick = async () => {
-      err('');
-      const btn = $('#cs-login-btn'); const old = btn.innerHTML;
-      btn.disabled = true; btn.style.opacity = '.75'; btn.textContent = '正在打开微信授权页…';
-      const r = await Auth.signInWechat();
-      if (!r.ok) {
-        btn.disabled = false; btn.style.opacity = '1'; btn.innerHTML = old;
-        err('微信登录暂时打不开：' + r.message + '\n可在「设置—数据管理—应用—登录方式」里确认已开启微信登录。');
-      }
-    };
-    $('#cs-guest-toggle').onclick = () => { const f = $('#cs-guest-form'); f.style.display = f.style.display === 'none' ? 'block' : 'none'; const i = $('#cs-guest-name'); if (i) i.focus(); };
-    $('#cs-guest-go').onclick = () => {
-      const n = ($('#cs-guest-name').value || '').trim();
+    const go = () => {
+      const n = ($('#cs-login-name').value || '').trim();
       if (!n) { toast('请输入姓名'); return; }
-      Auth.signInLocal(n); Auth.hideLoginOverlay(); Auth._cbs.forEach(cb => cb(Auth.session));
+      Auth.signInLocal(n); Auth.hideLoginOverlay(); Auth._cbs.forEach(cb => cb(null));
     };
-    if (inWechat()) { const t = $('#cs-login-tip'); if (t) t.innerHTML = '已检测到在微信中打开，点上方按钮即可一键登录。'; }
+    $('#cs-login-go').onclick = go;
+    $('#cs-login-name').onkeydown = e => { if (e.key === 'Enter') go(); };
+    setTimeout(() => { const i = $('#cs-login-name'); if (i) i.focus(); }, 60);
   },
   hideLoginOverlay() { const ov = $('#cs-login-overlay'); if (ov) ov.remove(); },
   gate(start) {
@@ -156,8 +86,6 @@ const Auth = {
       let started = false;
       const go = () => { if (started) return; started = true; Auth.hideLoginOverlay(); start(); };
       Auth.showLoginOverlay();
-      Auth.onSession(s => { if (s || Auth.isLogged()) go(); });
-      // 用姓名进入不会产生云端会话变更，这里轮询兜底
       const t = setInterval(() => { if (Auth.isLogged()) { clearInterval(t); go(); } }, 400);
     }).catch(e => { console.error(e); Auth.showLoginOverlay(); });
   }
@@ -318,12 +246,18 @@ const C = {
   async _get(id) { const r = await DB.from('cs_events').select('*').eq('id', id).maybeSingle(); return unwrap(r) || null; },
 
   async receiptsOfClass(classId) { const r = await DB.from('cs_events').select('*').eq('kind', 'receipt').eq('class_id', classId); return unwrap(r) || []; },
-  async receiptsOf(msgId) { const r = await DB.from('cs_events').select('*').eq('kind', 'receipt').filter('data->>msg_id', 'eq', jval(msgId)); return unwrap(r) || []; },
+  /* 注意：网关对 jsonb ->> 的服务端过滤不可靠（会返回空），这里统一取回后在本地筛 */
+  async receiptsOf(msgId) {
+    const r = await DB.from('cs_events').select('*').eq('kind', 'receipt');
+    return (unwrap(r) || []).filter(x => x.data && String(x.data.msg_id) === String(msgId));
+  },
   async addReceipt(msgId, classId, student) {
-    const ex = await DB.from('cs_events').select('id').eq('kind', 'receipt').filter('data->>msg_id', 'eq', jval(msgId)).filter('data->>student_id', 'eq', jval(student.id)).maybeSingle();
-    if (unwrap(ex)) return false;
-    await DB.from('cs_events').insert({ kind: 'receipt', class_id: classId, data: { msg_id: jval(msgId), student_id: jval(student.id), name: student.name, ts: Date.now() } });
-    return true;
+    const ex = await this.receiptsOf(msgId);
+    if (ex.some(r => r.data && String(r.data.student_id) === String(student.id))) return false;
+    const payload = { msg_id: jval(msgId), student_id: jval(student.id), name: student.name, ts: Date.now() };
+    if (student.collective) payload.collective = true;   // 整班一次确认（大屏上点的）
+    const r = await DB.from('cs_events').insert({ kind: 'receipt', class_id: classId, data: payload }).select().single();
+    return unwrap(r) || true;
   },
 
   async createRollcall(classId, mode, perSec, order) {
@@ -348,6 +282,51 @@ const C = {
     unwrap(await DB.from('cs_events').insert({ kind: 'timer', class_id: classId, data: data }).select('id'));
   },
   async clearTimer(classId) { await DB.from('cs_events').delete().eq('kind', 'timer').eq('class_id', classId); },
+
+  /* ---------- 单行状态（presence / draw）：先查后写，表里没有唯一约束 ---------- */
+  async _one(kind, classId) {
+    const r = await DB.from('cs_events').select('*').eq('kind', kind).eq('class_id', classId).limit(1);
+    const rows = unwrap(r) || [];
+    return rows[0] || null;
+  },
+  async _setOne(kind, classId, data) {
+    const ex = await this._one(kind, classId);
+    if (ex) { unwrap(await DB.from('cs_events').update({ data: data }).eq('id', ex.id)); return ex.id; }
+    const r = await DB.from('cs_events').insert({ kind: kind, class_id: classId, data: data }).select('id').single();
+    const row = unwrap(r); return row && row.id;
+  },
+
+  /* 大屏在线心跳：data.screen = 时间戳，老师端据此判断班级是否在线 */
+  async setPresence(classId, patch) {
+    const ex = await this._one('presence', classId);
+    const data = Object.assign({}, (ex && ex.data) || {}, patch);
+    return this._setOne('presence', classId, data);
+  },
+  async listPresence() { const r = await DB.from('cs_events').select('*').eq('kind', 'presence'); return unwrap(r) || []; },
+
+  /* 抽人回答：status = running | done */
+  async drawState(classId) { return this._one('draw', classId); },
+  async setDraw(classId, data) { return this._setOne('draw', classId, data); },
+
+  /* ---------- 已发送记录：删除 / 过期清理 ---------- */
+  async deleteMessage(id) {
+    try { await DB.from('cs_events').delete().eq('kind', 'receipt').filter('data->>msg_id', 'eq', jval(id)); } catch (e) {}
+    await DB.from('cs_events').delete().eq('id', id);
+  },
+  /* 只清「已发送记录」，定时任务（kind=schedule）不动 */
+  async purgeMessages(classIds, hours) {
+    const cutoff = Date.now() - (hours || 24) * 3600 * 1000;
+    let n = 0;
+    for (const cid of classIds) {
+      let rows = [];
+      try { rows = unwrap(await DB.from('cs_events').select('*').eq('kind', 'message').eq('class_id', cid).order('created_at', { ascending: false }).limit(300)) || []; } catch (e) { continue; }
+      for (const m of rows) {
+        const ts = m.created_at ? new Date(m.created_at).getTime() : ((m.data && m.data.ts) || 0);
+        if (ts && ts < cutoff) { try { await this.deleteMessage(m.id); n++; } catch (e) {} }
+      }
+    }
+    return n;
+  },
 };
 
 /* ---------- 倒计时操作 ---------- */
