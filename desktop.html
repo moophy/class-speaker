@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>班级小喇叭 · 桌面版下载</title>
+<style>
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;
+    background:radial-gradient(1000px 680px at 50% 0%,#12402F 0%,#0A1712 58%,#070D0B 100%);
+    color:#EAF3EF;min-height:100vh;padding:34px 20px 46px;
+  }
+  .wrap{width:min(720px,100%);margin:0 auto}
+  .head{text-align:center;margin-bottom:26px}
+  .logo{
+    width:70px;height:70px;border-radius:21px;margin:0 auto 14px;
+    background:linear-gradient(135deg,#00D68A,#00A76A);
+    display:flex;align-items:center;justify-content:center;
+    font-size:32px;font-weight:800;color:#fff;
+    box-shadow:0 16px 40px rgba(0,199,126,.34),inset 0 1px 0 rgba(255,255,255,.35);
+  }
+  h1{font-size:24px;margin:0 0 7px;letter-spacing:-.4px}
+  .sub{color:#8FA9A0;font-size:13px;line-height:1.7;margin:0}
+  .cards{display:grid;gap:12px}
+  .card{
+    background:rgba(255,255,255,.055);border:1px solid rgba(255,255,255,.09);
+    border-radius:17px;padding:17px 18px;
+  }
+  .card h2{margin:0 0 5px;font-size:15.5px;display:flex;align-items:center;gap:8px}
+  .tag{font-size:10.5px;font-weight:700;padding:2.5px 7px;border-radius:6px;letter-spacing:.3px}
+  .tag.web{background:rgba(0,214,138,.16);color:#4BE39B}
+  .tag.app{background:rgba(96,165,250,.16);color:#8CC2FF}
+  .card p{margin:0 0 13px;color:#97AEA4;font-size:12.8px;line-height:1.75}
+  .btn{
+    display:inline-flex;align-items:center;gap:6px;padding:11px 17px;border-radius:11px;
+    background:linear-gradient(135deg,#00D68A,#00A76A);color:#04120C;
+    font-size:13.5px;font-weight:800;text-decoration:none;
+  }
+  .btn.ghost{background:rgba(255,255,255,.08);color:#CFDED8;border:1px solid rgba(255,255,255,.12)}
+  .btn:active{transform:translateY(1px)}
+  .steps{margin-top:22px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);border-radius:15px;padding:16px 18px}
+  .steps h3{margin:0 0 11px;font-size:13px;color:#B9CCC4;letter-spacing:.4px}
+  .steps ol{margin:0;padding-left:19px;color:#8FA9A0;font-size:12.7px;line-height:2}
+  .steps b{color:#D6E6DF;font-weight:700}
+  .foot{margin-top:22px;text-align:center;font-size:11.5px;color:#5D7269;line-height:1.9}
+  .foot a{color:#7E988D}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="head">
+    <div class="logo">喇</div>
+    <h1>班级小喇叭</h1>
+    <p class="sub">老师在手机上发一条通知，教室电视立刻弹大字并朗读出来。<br>教师端用网页，大屏端和学生端用电脑软件。</p>
+  </div>
+
+  <div class="cards">
+    <div class="card">
+      <h2>教师端 <span class="tag web">网页</span></h2>
+      <p>手机或电脑浏览器直接打开，输入姓名就能用，不需要密码、不用扫码。发文字、说话、传图、定时通知、点名倒计时都在这里。</p>
+      <a class="btn" id="teacher" href="index.html">打开教师端网页</a>
+    </div>
+
+    <div class="card">
+      <h2>教室大屏 <span class="tag app">桌面软件</span></h2>
+      <p>装在教室那台连着电视的电脑上。收到通知就全屏弹字 + 朗读，还能常驻执行定时广播（眼保健操、放学提醒）。</p>
+      <a class="btn" href="https://github.com/moophy/class-speaker/archive/refs/heads/main.zip">下载桌面版</a>
+      <a class="btn ghost" href="https://github.com/moophy/class-speaker" style="margin-left:8px">查看源码</a>
+    </div>
+
+    <div class="card">
+      <h2>学生端 <span class="tag app">桌面软件</span></h2>
+      <p>装在教室电脑上，学生按住说话，老师在手机上就能听到回放。</p>
+      <a class="btn" href="https://github.com/moophy/class-speaker/archive/refs/heads/main.zip">下载桌面版</a>
+    </div>
+  </div>
+
+  <div class="steps">
+    <h3>桌面端怎么用</h3>
+    <ol>
+      <li>点「下载桌面版」，得到 <b>class-speaker-main.zip</b>，解压到任意文件夹（建议 D 盘）。</li>
+      <li>进入解压出来的 <b>desktop</b> 文件夹。<br>大屏双击 <b>start-screen.vbs</b>，学生端双击 <b>start-student.vbs</b>（没反应就改用同名的 .bat）。</li>
+      <li>第一次打开会让你输入 <b>6 位绑定码</b>；绑定码在教师端「班级」页顶部。之后每次打开自动记住。</li>
+    </ol>
+  </div>
+
+  <p class="foot">
+    大屏端 / 学生端是本地软件，双击后会以一个独立窗口运行，不带地址栏，和普通软件一样。<br>
+    需要电脑上装有 Microsoft Edge（Win10 / Win11 自带）或 Chrome。
+  </p>
+</div>
+
+<script>
+(function () {
+  // 教师端就在同目录的 index.html（姓名登录，无需扫码）
+  try {
+    var p = new URLSearchParams(location.search);
+    var code = (p.get('code') || '').trim();
+    document.getElementById('teacher').href = 'index.html' + (/^\d{6}$/.test(code) ? '?code=' + code : '');
+  } catch (e) {}
+})();
+</script>
+</body>
+</html>
